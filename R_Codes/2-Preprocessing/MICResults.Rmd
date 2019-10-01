@@ -1,0 +1,502 @@
+---
+title: "Chapter 2: MIC Results"
+author: "Manon Martin"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output:
+  html_document:
+    smart: FALSE
+    code_folding: hide
+    collapsed: yes
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 9
+    highlight: tango
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+
+require(here)
+proj.path <- here()
+setwd(proj.path)
+
+require(PepsNMR)
+require(MBXUCL)
+require(ggplot2)
+require(cowplot)
+require(knitr)
+require(pander)
+```
+
+# Data pre-processing / import
+
+## HUMAN SERUM FULL PepsNMR
+```{r, eval=FALSE}
+## HUMAN SERUM FULL PepsNMR ------------------
+
+data.path = "../../Datasets/1_human_serum_urine/HumanSerum/fids"
+fidList <- ReadFids(file.path(getwd(), data.path))
+Fid_data <- fidList[["Fid_data"]]
+Fid_info <- fidList[["Fid_info"]]
+Fid_data <- GroupDelayCorrection(Fid_data, Fid_info)
+Fid_data <- SolventSuppression(Fid_data)
+Fid_data <- Apodization(Fid_data, Fid_info)
+# Fid_data <- ZeroFilling(Fid_data)
+Spectrum_data <- FourierTransform(Fid_data, Fid_info)
+Spectrum_data <- ZeroOrderPhaseCorrection(Spectrum_data)
+Spectrum_data <- InternalReferencing(Spectrum_data, Fid_info)
+Spectrum_data <- BaselineCorrection(Spectrum_data)
+Spectrum_data <- NegativeValuesZeroing(Spectrum_data)
+Spectrum_data <- Warping(Spectrum_data,reference.choice = "before")
+Spectrum_data <- WindowSelection(Spectrum_data)
+Spectrum_data <- Bucketing(Spectrum_data)
+Spectrum_data <- RegionRemoval(Spectrum_data, typeofspectra = "serum")
+# Spectrum_data <- ZoneAggregation(Spectrum_data)
+Spectrum_data <- Normalization(Spectrum_data, type.norm = "mean")
+
+
+require(MBXUCL)
+class = as.factor(as.numeric(substr(rownames(Fid_data), 5,5)))
+PCA.res= MBXUCL::SVDforPCA(Re(Spectrum_data), ncomp=5)
+DrawScores(PCA.res, drawNames=TRUE, type.obj = "PCA", 
+           color = class, pch = class,
+           createWindow=FALSE, axes =c(1,2))
+
+classHS_FULLPepsNMR = as.numeric(class)
+dataHS_FULLPepsNMR = Re(Spectrum_data)
+rownames(dataHS_FULLPepsNMR) = substr(gsub("-", "", rownames(dataHS_FULLPepsNMR)),1,4)
+
+save(dataHS_FULLPepsNMR, classHS_FULLPepsNMR, 
+     file = "Data/HumanSerum/HS_FULLPepsNMR_FinalSpectra.RData")
+
+```
+
+```{r}
+load(file.path(getwd(),"../../Datasets/1_human_serum_urine/HumanSerum/HS_FULLPepsNMR_FinalSpectra.RData"))
+```
+
+## HUMAN URINE FULL PepsNMR 
+
+```{r, eval=FALSE}
+
+## HUMAN URINE FULL PepsNMR ------------------
+data.path = "../../Datasets/1_human_serum_urine/HumanUrine/fids"
+fidList <- ReadFids(file.path(getwd(), data.path))
+Fid_data <- fidList[["Fid_data"]]
+Fid_info <- fidList[["Fid_info"]]
+Fid_data <- GroupDelayCorrection(Fid_data, Fid_info)
+Fid_data <- SolventSuppression(Fid_data)
+Fid_data <- Apodization(Fid_data, Fid_info)
+# Fid_data <- ZeroFilling(Fid_data)
+Spectrum_data <- FourierTransform(Fid_data, Fid_info)
+Spectrum_data <- ZeroOrderPhaseCorrection(Spectrum_data)
+Spectrum_data <- InternalReferencing(Spectrum_data, Fid_info)
+Spectrum_data <- BaselineCorrection(Spectrum_data)
+Spectrum_data <- NegativeValuesZeroing(Spectrum_data)
+Spectrum_data <- Warping(Spectrum_data,reference.choice = "before")
+Spectrum_data <- WindowSelection(Spectrum_data)
+Spectrum_data <- Bucketing(Spectrum_data)
+Spectrum_data <- RegionRemoval(Spectrum_data, typeofspectra = "urine")
+Spectrum_data <- ZoneAggregation(Spectrum_data)
+Spectrum_data <- Normalization(Spectrum_data, type.norm = "mean")
+
+class = as.factor(as.numeric(substr(rownames(Fid_data), 2,2)))
+PCA.res= MBXUCL::SVDforPCA(Re(Spectrum_data), ncomp=5)
+DrawScores(PCA.res, drawNames=TRUE, type.obj = "PCA", 
+           color = class, pch = class,
+           createWindow=FALSE, axes =c(1,2))
+
+classHU_FULLPepsNMR <- as.numeric(class)
+dataHU_FULLPepsNMR <- Re(Spectrum_data)
+rownames(dataHU_FULLPepsNMR) <- gsub("-", "", rownames(dataHU_FULLPepsNMR))
+save(dataHU_FULLPepsNMR, classHU_FULLPepsNMR, 
+     file = "Data/HumanUrine/HU_FULLPepsNMR_FinalSpectra.RData")
+
+```
+
+```{r}
+load(file.path(getwd(),"../../Datasets/1_human_serum_urine/HumanUrine/HU_FULLPepsNMR_FinalSpectra.RData"))
+
+```
+
+## HUMAN SERUM MANUAL
+```{r}
+## HUMAN SERUM MANUAL ------------------------
+load(file.path(getwd(),"../../Datasets/1_human_serum_urine/HumanSerum/manual_preprocessing/HumanSerumManualPretreat.RData"))
+dataHS_MANUAL = HumanSerum_Manual500[["HumanSerumData_Manual500"]]
+classHS_MANUAL = HumanSerum_Manual500[["class_HumanSerumData_Manual500"]]
+rownames(dataHS_MANUAL) = substr(gsub("-", "", rownames(dataHS_MANUAL)),1,4)
+
+```
+
+## HUMAN URINE MANUAL
+
+```{r}
+## HUMAN URINE MANUAL ------------------------
+HU_MANUAL = read.table(file.path(getwd(),"../../Datasets/1_human_serum_urine/HumanUrine/manual_preprocessing/HU_Manual_B500_Spectra_data.csv"), header = TRUE, check.names = FALSE, sep = ";", dec = ",",row.names=1)
+colnames(HU_MANUAL)<- sub(",",".",colnames(HU_MANUAL))
+dataHU_MANUAL = as.matrix(HU_MANUAL)
+classHU_MANUAL = as.numeric(substr(rownames(dataHU_MANUAL), 4,4))
+rownames(dataHU_MANUAL) = substr(gsub("_", "", rownames(dataHU_MANUAL)),2,7)
+
+```
+
+
+## all the spectra are here ?
+
+```{r, results='hide'}
+rownames(dataHS_MANUAL)[which(!rownames(dataHS_MANUAL) %in% rownames(dataHS_FULLPepsNMR))]
+rownames(dataHS_FULLPepsNMR)[which(!rownames(dataHS_FULLPepsNMR) %in% rownames(dataHS_MANUAL))] # "J4D3" not there
+
+rownames(dataHU_FULLPepsNMR)[which(!rownames(dataHU_FULLPepsNMR) %in% rownames(dataHU_MANUAL))]
+rownames(dataHU_MANUAL)[which(!rownames(dataHU_MANUAL) %in% rownames(dataHU_FULLPepsNMR))]
+
+```
+
+
+
+# Check for outliers 
+
+```{r, message = FALSE, results='hide'}
+source(file = "RobustPCA.R")
+require(rrcov)
+
+# Human Serum -----------------
+RobustPCA(dataHS_MANUAL, dataname="dataHS_MANUAL", 
+          group=classHS_MANUAL, k=0, kgroup=0, impG=TRUE, 
+          Out.path="Figures/graphicsROBPCA") 
+o1 = c("J6D4")
+
+RobustPCA(dataHS_FULLPepsNMR, dataname="dataHS_FULLPepsNMR", 
+          group=classHS_FULLPepsNMR, k=0, kgroup=0, impG=TRUE, 
+          Out.path="Figures/graphicsROBPCA") 
+o2 = c("J6D3")
+
+# Human urine  -----------------
+RobustPCA(dataHU_MANUAL, dataname="dataHU_MANUAL", 
+          group=classHU_MANUAL, k=0, kgroup=0, impG=TRUE, 
+          Out.path="Figures/graphicsROBPCA") 
+
+rownam <- rownames(dataHU_FULLPepsNMR)
+rownames(dataHU_FULLPepsNMR) <- substr(rownames(dataHU_FULLPepsNMR), 2,6)
+RobustPCA(x = dataHU_FULLPepsNMR, dataname="dataHU_FULLPepsNMR", 
+          group=classHU_FULLPepsNMR, k=0, kgroup=0, impG=TRUE,
+          Out.path="Figures/graphicsROBPCA") 
+o4 = c("S1D1E2") # OK verified
+rownames(dataHU_FULLPepsNMR) <- rownam
+
+# Define outliers for HS and Urine HU
+Outliers = c(o1, o2, o4)
+
+# remove outliers --------------------
+
+# manual
+classHS_MANUAL = classHS_MANUAL[which(!rownames(dataHS_MANUAL) %in% Outliers & rownames(dataHS_MANUAL) %in% rownames(dataHS_FULLPepsNMR))]
+length(classHS_MANUAL)
+dataHS_MANUAL = dataHS_MANUAL[which(!rownames(dataHS_MANUAL) %in% Outliers & rownames(dataHS_MANUAL) %in% rownames(dataHS_FULLPepsNMR)),]
+
+classHU_MANUAL = classHU_MANUAL[which(!rownames(dataHU_MANUAL) %in% Outliers & rownames(dataHU_MANUAL) %in% rownames(dataHU_FULLPepsNMR))]
+dataHU_MANUAL = dataHU_MANUAL[which(!rownames(dataHU_MANUAL) %in% Outliers & rownames(dataHU_MANUAL) %in% rownames(dataHU_FULLPepsNMR)),]
+
+# full PepsNMR
+classHS_FULLPepsNMR = classHS_FULLPepsNMR[which(!rownames(dataHS_FULLPepsNMR) %in% Outliers & rownames(dataHS_FULLPepsNMR) %in% rownames(dataHS_MANUAL))]
+dataHS_FULLPepsNMR = dataHS_FULLPepsNMR[which(!rownames(dataHS_FULLPepsNMR) %in% Outliers & rownames(dataHS_FULLPepsNMR) %in% rownames(dataHS_MANUAL)),]
+
+classHU_FULLPepsNMR = classHU_FULLPepsNMR[which(!rownames(dataHU_FULLPepsNMR) %in% Outliers & rownames(dataHU_FULLPepsNMR) %in% rownames(dataHU_MANUAL))]
+dataHU_FULLPepsNMR = dataHU_FULLPepsNMR[which(!rownames(dataHU_FULLPepsNMR) %in% Outliers & rownames(dataHU_FULLPepsNMR) %in% rownames(dataHU_MANUAL)),]
+
+
+## All datasets with no outliers ----------------
+
+datasets_HS = list(dataHS_MANUAL=dataHS_MANUAL, dataHS_FULLPepsNMR= dataHS_FULLPepsNMR )
+datasets_HU = list(dataHU_MANUAL = dataHU_MANUAL,  dataHU_FULLPepsNMR = dataHU_FULLPepsNMR)
+
+classes_HS = list(classHS_MANUAL =as.numeric(classHS_MANUAL), classHS_FULLPepsNMR =classHS_FULLPepsNMR)
+classes_HU = list(classHU_MANUAL= classHU_MANUAL, classHU_FULLPepsNMR=classHU_FULLPepsNMR)
+
+
+datasets = c(datasets_HS, datasets_HU)
+classes = c(classes_HS, classes_HU)
+
+names(datasets) = c("HSerum - MANUAL","HSerum - PepsNMR", "HUrine - MANUAL", "HUrine - PepsNMR")
+
+save(datasets, classes, file = "FINAL_Datasets_classes.RData")
+
+```
+
+
+# Repeatability measures
+
+```{r}
+# load("FINAL_Datasets_classes.RData")
+```
+
+## PCA
+
+```{r}
+##----------- ALL datasets
+main = "PCA scores plot"
+PCA.res = list()
+plots = list()
+i=1
+
+
+for (j in  names(datasets)) {
+  PCA.res[[j]] = MBXUCL::SVDforPCA(datasets[[j]])
+  
+  Donor = as.factor(classes[[i]])
+  plots[[j]] <- DrawScores(PCA.res[[j]], drawNames=TRUE, 
+                           type.obj = "PCA",color = Donor, pch = Donor,
+                       createWindow=FALSE, 
+                       main =  paste0(main, "\n Dataset: ", j),
+                       axes =c(1,2))
+  
+  i=i+1
+}
+
+pp = plot_grid(plots[[1]], plots[[2]], plots[[3]], plots[[4]], labels=c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+pp
+# ggsave(file.path("Figures", "PCA_ALL.pdf"), plot=pp, height = 10, width = 11)
+
+# quartz()
+# pp
+
+var_PCA = sapply(PCA.res, function(x) x[["var"]][1:5])
+cum2PC = colSums(var_PCA[1:2,])
+
+pander(round(var_PCA[1:2,],1))
+
+
+## 1rst Loadings plot of manual HSerum
+# pdf(file.path("Figures","loadings_manualHSerum.pdf"), height = 3)
+DrawLoadings(PCA.res[[1]], type.obj = "PCA",
+       createWindow=FALSE, main =  paste0(main, "\n Dataset: ", "HSerum - MANUAL"),
+       axes =c(1))
+# dev.off()
+
+
+##----------- datasets_HS 
+main = "PCA scores plot"
+PCA.res = list()
+plots = list()
+i=1
+# names(datasets)
+for (j in  names(datasets_HS)) {
+  PCA.res[[j]] = MBXUCL::SVDforPCA(datasets_HS[[j]], ncomp=5)
+  
+  class = as.factor(classes_HS[[i]])
+  plots[[j]] <- DrawScores(PCA.res[[j]], drawNames=TRUE, type.obj = "PCA",
+                           color = class, pch = class,
+         createWindow=FALSE, main =  paste0(main, "\n Dataset: ", j),
+         axes =c(1,2))
+  
+  i=i+1
+}
+
+pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), ncol = 2, nrow = 1)
+pp
+# ggsave("PCA_HS.pdf", plot=pp, height = 4.5, width = 11)
+
+
+# loadings
+main = "PCA loadings plot"
+
+PCA.res_HS_MANUAL = MBXUCL::SVDforPCA(datasets_HS[["dataHS_MANUAL"]], ncomp=5)
+PCA.res_dataHS_FULLPepsNMR = MBXUCL::SVDforPCA(datasets_HS[["dataHS_FULLPepsNMR"]], ncomp=5)
+
+# pdf("PCA_HS_loadings.pdf", width = 10)
+# par(mfrow=c(2,1))
+pp1 =DrawLoadings(PCA.res_HS_MANUAL,  type.obj = "PCA",
+                       createWindow=FALSE, main =  paste0(main, "\n Dataset: HSerum - MANUAL"),
+                       axes =c(1), num.stacked = 2)
+
+pp2 = DrawLoadings(PCA.res_dataHS_FULLPepsNMR, type.obj = "PCA",
+       createWindow=FALSE, main =  paste0(main, "\n Dataset: HSerum - PepsNMR"),
+       axes =c(1))
+
+# dev.off()
+
+p = plot_grid(pp1[[1]], pp2[[1]], labels=c("A", "B"), ncol = 1, nrow = 2)
+p
+# ggsave("PCA_HS_loadings.pdf", plot=p, height = 7, width = 10)
+
+
+
+# PCA_HS_COLJ
+main = "PCA scores plot"
+PCA.res = list()
+plots = list()
+i=1
+# names(datasets)
+for (j in  names(datasets_HS)) {
+  PCA.res[[j]] = MBXUCL::SVDforPCA(datasets_HS[[j]], ncomp=5)
+  
+  class = as.numeric(substr(rownames(datasets_HS[[j]]),2,2))
+  plots[[j]] <- DrawScores(PCA.res[[j]], drawNames=TRUE, type.obj = "PCA",
+                       color = class, pch = class,
+                       createWindow=FALSE, main =  paste0(main, "\n Dataset: ", j),
+                       axes =c(1,2))
+  
+  i=i+1
+}
+
+pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), ncol = 2, nrow = 1)
+# ggsave("PCA_HS_COLJ.pdf", plot=pp, height = 4.5, width = 11)
+pp
+
+
+##----------- datasets_HU
+
+main = "PCA scores plot"
+PCA.res = list()
+plots = list()
+i=1
+# names(datasets)
+for (j in  names(datasets_HU)) {
+  PCA.res[[j]] = MBXUCL::SVDforPCA(datasets_HU[[j]], ncomp=5)
+  
+  class = as.factor(classes_HU[[i]])
+  plots[[j]] <- DrawScores(PCA.res[[j]], drawNames=TRUE, type.obj = "PCA",
+                       color = class, pch = class,
+                       createWindow=FALSE, main =  paste0(main, " \nDataset: ", j),
+                       axes =c(1,2))
+  
+  i=i+1
+}
+
+pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), ncol = 2, nrow = 1)
+# ggsave("PCA_HU.pdf", plot=pp, height = 4.5, width = 11)
+pp
+```
+
+## Inertia
+
+```{r}
+Inertia.res = list()
+tab.inertia = c()
+i=1
+for (j in  names(datasets)) {
+  Inertia.res[[j]] = MBXUCL::Inertia(x = as.matrix(datasets[[j]]), y = classes[[i]], print = FALSE)
+  i=i+1
+  tab.inertia = rbind(tab.inertia, Inertia.res[[j]]$Between_within[2,1:2] )
+}
+
+rownames(tab.inertia) = names(datasets)
+
+pander(round(tab.inertia,1))
+```
+
+## Unsupervised clustering
+
+```{r}
+ClustMIC.res = PCA.res = list()
+tab.ClustMIC = c()
+i=1
+for (j in  names(datasets_HS)) {
+  # ClustMIC.res[[j]] = MBXUCL::ClustMIC(Intensities =
+  #                                        as.matrix(datasets_HS[[j]]), 
+  #                          nClust = 3, Trcl = classes_HS[[i]], 
+  #                          Dendr = FALSE)
+    PCA.res[[j]] = MBXUCL::SVDforPCA(datasets_HS[[j]])
+    ClustMIC.res[[j]] = MBXUCL::ClustMIC(Intensities =
+                                         as.matrix(PCA.res[[j]]$scores), 
+                           nClust = 3, Trcl = classes_HS[[i]], 
+                           Dendr = FALSE)
+  tab.ClustMIC = rbind(tab.ClustMIC, ClustMIC.res[[j]])
+  i=i+1
+}
+
+tab.ClustMIC_HS = tab.ClustMIC
+rownames(tab.ClustMIC_HS) = names(datasets_HS)
+
+pander(round(tab.ClustMIC_HS,2))
+
+# tab.ClustMIC_HU
+ClustMIC.res = PCA.res = list()
+tab.ClustMIC = c()
+i=1
+for (j in  names(datasets_HU)) {
+  # ClustMIC.res[[j]] = MBXUCL::ClustMIC(Intensities =
+  #                                        as.matrix(datasets_HU[[j]]),
+  #                            nClust = 3,Trcl = classes_HU[[i]], 
+  #                            Dendr = FALSE)
+  PCA.res[[j]] = MBXUCL::SVDforPCA(datasets_HU[[j]])
+  ClustMIC.res[[j]] = MBXUCL::ClustMIC(Intensities =
+                                         as.matrix(PCA.res[[j]]$scores),
+                             nClust = 3,Trcl = classes_HU[[i]], 
+                             Dendr = FALSE)
+  tab.ClustMIC = rbind(tab.ClustMIC, ClustMIC.res[[j]])
+  i=i+1
+}
+
+tab.ClustMIC_HU = tab.ClustMIC
+rownames(tab.ClustMIC_HU) = names(datasets_HU)
+pander(round(tab.ClustMIC_HU,2))
+
+tab.ClustMIC = rbind(tab.ClustMIC_HS,tab.ClustMIC_HU)
+
+```
+
+## PLSDA
+
+```{r}
+PLSDA.res = list()
+tab.perf.plsda_HS = c()
+Q2cum_HS = c()
+i=1
+for (j in  names(datasets_HS)) {
+  PLSDA.res[[j]] = PLSDA(x = datasets_HS[[j]], y = classes_HS[[i]], nLV = 4, drawRMSEP = TRUE)
+  tab.perf.plsda_HS = rbind(tab.perf.plsda_HS, PLSDA.res[[j]][[6]])
+  Q2cum_HS = rbind(Q2cum_HS, PLSDA.res[[j]][[7]])
+  i=i+1
+}
+
+colnames(tab.perf.plsda_HS) = c("Q2(Y1)","Q2(Y2)","Q2(Y3)", "Q2(Y4)")
+
+
+```
+
+```{r, fig.height=3}
+PLSDA.res = list()
+tab.perf.plsda_HU = c()
+Q2cum_HU = c()
+i=1
+for (j in  names(datasets_HU)) {
+  PLSDA.res[[j]] = PLSDA(x = datasets_HU[[j]], y = classes_HU[[i]], nLV = 2, drawRMSEP = TRUE)
+  tab.perf.plsda_HU = rbind(tab.perf.plsda_HU, PLSDA.res[[j]][[6]])
+  Q2cum_HU = rbind(Q2cum_HU, PLSDA.res[[j]][[7]])
+  i=i+1
+}
+
+colnames(tab.perf.plsda_HU) =
+  c("Q2(Y1)","Q2(Y2)","Q2(Y3)")
+```
+
+## Final table
+
+```{r}
+#============= Final table
+
+FINAL_tab = cbind(round(tab.inertia,3), round(tab.ClustMIC,3), cum2PC = round(cum2PC,3))
+# FINAL_tab_Kmeans = 
+#   FINAL_tab[,c("BI", "WI","DunnKM","DBKM","RandKM",
+#                "AdjRandKM", "PLSDA_Q2cum", "cum2PC")]
+FINAL_tab_Ward = 
+  FINAL_tab[,c("RandW","AdjRandW","DunnW","DBW", 
+               "BI", "WI", "cum2PC")]
+
+pander(round(FINAL_tab_Ward, 2))
+
+write.csv(round(FINAL_tab_Ward,2), file = "FINAL_tab.csv")
+
+```
+

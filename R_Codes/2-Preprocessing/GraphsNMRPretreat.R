@@ -1,0 +1,484 @@
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+### ARTICLE PEPSNMR graphs ==================
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+# Graphs for spectral pretreatment explanation
+
+setwd("/Users/manon/Documents/Doctorat/Manuscript_these/codes_R/PepsNMR")
+# fig.path = "/Users/manon/Documents/Doctorat/Manuscript_these/codes_R/PepsNMR/Figures"
+fig.path = "/Users/manon/Documents/Doctorat/Manuscript_these/manuscript/2-Preprocessing/FIGURES"
+
+
+
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+## PEPSNMR WORKFLOW =========================
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+require(PepsNMR)
+require(PepsNMRData)
+path <-  system.file("extdata", package = "PepsNMRData")
+
+fidList <- ReadFids(file.path(path, "HumanSerum"))
+Fid_data0 <- fidList[["Fid_data"]]
+Fid_info <- fidList[["Fid_info"]]
+
+# pdf('/Users/manon/Documents/Doctorat/SOAP/Writing/Article_SOAP/LATEX_CURRENT/FIGURES/initialFID.pdf', 
+#     height = 3, width = 6, pointsize=18)
+marks <- seq(-1e6,7e5, 5e5)
+par(mar=c(3,3,2,2))
+plot(Re(Fid_data0[4,]),type="l", xlab="", yaxt="n", 
+     ylab = "", main = "Raw signal (FID)", ylim = c(-1e6,7e5))
+axis(2,at=marks,labels=format(marks,scientific=TRUE, digits=0))
+mtext(text='Time', side =1, line = 2)
+mtext(text='Intensity', side =2, line = 2)
+# dev.off()
+
+# pdf('/Users/manon/Documents/Doctorat/SOAP/Writing/Article_SOAP/LATEX_CURRENT/FIGURES/Spectrum.pdf', 
+#     height = 3, width = 6, pointsize=18)
+par(mar=c(3,3,2,2))
+plot(Re(Spectrum_data[4,]), type="l", xlab="", xaxt="n", 
+     ylab = "", main = "Spectrum")
+axt <- round(as.numeric(colnames(Spectrum_data)),2)
+at <- seq(1,500, 99)
+axis(1,at=at,labels=axt[at])
+mtext(text='ppm', side =1, line = 2)
+mtext(text='Intensity', side =2, line = 2)
+# dev.off()
+
+
+
+## GroupDelayCorrection ==========================
+
+
+Fid_data1 <- GroupDelayCorrection(Fid_data0, Fid_info)
+
+
+## SolventSuppression ==========================
+
+
+Ss.res <- SolventSuppression(Fid_data1, returnSolvent=TRUE)
+Fid_data2 = Ss.res[["Fid_data"]]
+SolventRe = Ss.res[["SolventRe"]]
+
+Fid_data2_no1OPC <- SolventSuppression(Fid_data0, returnSolvent=FALSE)
+
+
+## Apodization ==========================
+
+
+Fid_data3 <- Apodization(Fid_data2, Fid_info)
+Fid_data3_noSS <- Apodization(Fid_data1, Fid_info)
+Fid_data3_no1OPC <- Apodization(Fid_data2_no1OPC, Fid_info)
+  
+
+# ZeroFilling ==========================
+
+
+Fid_data4 <- ZeroFilling(Fid_data3)
+Fid_data4_noSS <- ZeroFilling(Fid_data3_noSS)
+Fid_data4_no1OPC <- ZeroFilling(Fid_data3_no1OPC)
+
+
+
+## FourierTransform ==========================
+
+RawSpect_data4 <- FourierTransform(Fid_data4, Fid_info)
+RawSpect_data4_noSS <- FourierTransform(Fid_data4_noSS, Fid_info)
+RawSpect_data4_no1OPC <- FourierTransform(Fid_data4_no1OPC , Fid_info)
+  
+
+## ZeroOrderPhaseCorrection ==========================
+
+
+Spectrum_data5 <- ZeroOrderPhaseCorrection(RawSpect_data4)
+Spectrum_data5_noSS <- ZeroOrderPhaseCorrection(RawSpect_data4_noSS)
+Spectrum_data5_no1OPC <- ZeroOrderPhaseCorrection(RawSpect_data4_no1OPC)
+
+
+## InternalReferencing ==========================
+
+nspectr = 1
+
+res.InternalReferencing <- InternalReferencing(Spectrum_data5, Fid_info, 
+                                               rowindex_graph = 1)
+
+Spectrum_data6 <- res.InternalReferencing$Spectrum_data
+
+
+  
+Spectrum_data6_noSS <- InternalReferencing(Spectrum_data5_noSS, 
+                                           Fid_info)
+Spectrum_data6_no1OPC <- InternalReferencing(Spectrum_data5_no1OPC, 
+                                             Fid_info)
+
+plot(Re(Spectrum_data6[nspectr,]), type="l")
+
+
+# Baseline correction ==========================
+
+
+Res.BC <- BaselineCorrection(Spectrum_data6, returnBaseline = TRUE, lambda.bc=1e6,p.bc=0.01)
+
+Spectrum_data7 = Res.BC[["Spectrum_data"]] 
+Baseline = Res.BC[["Baseline"]]
+
+Spectrum_data8 <- NegativeValuesZeroing(Spectrum_data7)
+plot(Re(Spectrum_data8[nspectr,]), type="l")
+
+
+
+## Warping ==========================
+
+res.warp <- Warping(Spectrum_data8, returnWarpFunc = TRUE,reference.choice =c("before"))
+
+Spectrum_data9 = res.warp[["Spectrum_data"]]
+warp.func = res.warp[["Warp.func"]]
+
+plot(warp.func[5,], type="l")
+
+Spectrum_dataB = Spectrum_data8
+Spectrum_dataA = Spectrum_data9
+
+
+## Remaining steps ==========================
+
+Spectrum_data <- WindowSelection(Spectrum_data9, from.ws = 10, to.ws = 0.2)
+Spectrum_data <- Bucketing(Spectrum_data)
+Spectrum_data <- RegionRemoval(Spectrum_data, typeofspectra = "serum")
+Spectrum_data <- ZoneAggregation(Spectrum_data)
+Spectrum_data <- Normalization(Spectrum_data, type.norm = "mean")
+
+
+
+
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+## DRAWINGS ####
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
+
+
+nspectr = 1
+Col1 = "gray18"
+Col2 = "firebrick1"
+cex.legend = 0.8
+
+
+# Group Delay ==========================
+
+require(pBrackets)
+pdf(file.path(fig.path,"1OPC.pdf"),  width = 10, height=4.4)
+layout(matrix(c(1,2,1,3), 2, 2, byrow = TRUE))
+par(mar = c(3,2,2,2))
+time <- as.numeric(colnames(Fid_data0))*1000
+plot(time[0:300], Re(Fid_data0[2,0:300]), mgp = c(2.2, 1, 0),  
+     type="l", ylab = "Intensity", xlab=expression(paste("Time (", 10^3*mu,"s)")), 
+     main="FID with a Group Delay (real part - zoom)", col=Col1)
+brackets(x1=0, y1=-1.2e5, x2=3.3, y2=-1.2e5, h = 25000, type = 4,curvature=1, 
+         ticks = c(0, 1) ,  col = "red", lwd = 2, lty = 1, xpd = TRUE)
+mtext("Group Delay", at = 1.6, line=-21.5, side=1, cex = 1, col="red")
+
+plot(Re(Spectrum_data6_no1OPC[1,]), type="l", ylab = "Intensity",
+     mgp = c(2, 1, 0), xaxt = "n", 
+     xlab="ppm", main="Spectrum with Group Delay (real part)", col=Col1)
+axis(side=1, at = seq(1,length(Spectrum_data6_no1OPC[1,]), 9635), 
+     labels = round(as.numeric(colnames(Spectrum_data6_no1OPC)[
+       seq(1,length(Spectrum_data6[1,]), 9635)]),1), cex.axis=0.8)
+
+plot(Re(Spectrum_data6[2,]), type="l",  ylab = "Intensity", 
+     mgp = c(2, 1, 0),xaxt = "n", 
+     xlab="ppm", main="Spectrum without Group Delay (real part)", col=Col1)
+axis(side=1, at = seq(1,length(Spectrum_data6[1,]), 9635), 
+     labels = round(as.numeric(colnames(Spectrum_data6)[
+       seq(1,length(Spectrum_data6[1,]), 9635)]),1), cex.axis=0.8)
+dev.off()
+
+
+# SolventSuppression  ==========================
+
+# pdf("SolventSuppression.pdf", width = 7, height=4.4)
+pdf(file.path(fig.path,"SolventSuppression.pdf"), width = 10, height=5)
+par(mar=c(3.5,3.5,1.5,1), mfrow=c(2,2))
+plot(time[0:4000], Re(Fid_data1[1,0:4000]), mgp = c(2.2, 1, 0), ylim = c(-3e5, 3e5), col=Col1, 
+     type="l", ylab = "Intensity", xlab="Time (ms)", 
+     main="FID and solvent residuals signal (real part - zoom)")
+lines(time[0:4000],SolventRe[1,0:4000], col=Col2 , lty = 1, lwd = 1.3)
+legend("topright", bty = "n", legend = c(expression(paste("Estimated solvent residuals signal ", (italic(W)))), expression(paste("FID signal ", (italic(S))))), 
+       col=c(Col2, Col1),  lty = 1, cex = cex.legend, lwd=1.2)
+
+plot(Re(Spectrum_data6_noSS[1,]), type="l", mgp = c(2.2, 1, 0), ylab = "Intensity", xaxt = "n", 
+     xlab="ppm", main="Spectrum without Solvent Suppression (real part)", 
+     ylim = c(min(Re(Spectrum_data6_noSS[1,]),Re(Spectrum_data6[1,])), 
+              max(Re(Spectrum_data6_noSS[1,]),Re(Spectrum_data6[1,]))),col=Col1)
+axis(side=1, at = seq(1,length(Spectrum_data6_noSS[1,]), 9635), 
+     labels = round(as.numeric(colnames(Spectrum_data6_noSS)[
+       seq(1,length(Spectrum_data6_noSS[1,]), 9635)]),1))
+
+plot(time[0:4000], Re(Fid_data2[1,0:4000]), mgp = c(2.2, 1, 0), ylim = c(-3e5, 3e5), col=Col1, 
+     type="l", ylab = "Intensity", xlab="Time (ms)", 
+     main="FID without solvent residuals signal (real part - zoom)")
+lines(time[0:4000], rep(0, 4000), col=Col2 , lty = 2, lwd = 1.3)
+
+plot(Re(Spectrum_data6[1,]), type="l",  mgp = c(2.2, 1, 0), ylab = "Intensity", xaxt = "n", 
+     xlab="ppm", main="Spectrum with Solvent Suppression (real part)",
+     ylim = c(min(Re(Spectrum_data6_noSS[1,]),Re(Spectrum_data6[1,])), 
+              max(Re(Spectrum_data6_noSS[1,]),Re(Spectrum_data6[1,]))),col=Col1)
+axis(side=1, at = seq(1,length(Spectrum_data6[1,]), 9635), 
+     labels = round(as.numeric(colnames(Spectrum_data6)[
+       seq(1,length(Spectrum_data6[1,]), 9635)]),1))
+
+
+dev.off()
+
+## InternalReferencing ==========================
+
+res.InternalReferencing$plots[[1]]
+
+#  BaselineCorrection =========================
+
+nspectr = 1
+# fen = c(17780:18250)
+fen = c(34600:38000)
+# fen = c(14000:25000)
+Res.BC <- BaselineCorrection(Spectrum_data6, returnBaseline = TRUE, 
+                             lambda.bc=1e6,p.bc=0.002)
+Spectrum_data7 = Res.BC[["Spectrum_data"]] 
+Baseline = Res.BC[["Baseline"]]
+# pdf("BaselineCorrection.pdf", width = 7, height=4.4)
+
+pdf(file.path(fig.path,"BaselineCorrection.pdf"), width = 7, height=7)
+
+par(mar=c(3.5,3.5,1.5,1), mfrow=c(2,1))
+plot(Re(Spectrum_data6[nspectr,fen]), mgp = c(2.2, 1, 0), col=Col1, type="l", ylab = "Intensity", xaxt = "n", xlab="ppm", 
+     main="Spectrum and its estimated baseline (real part - zoom)")
+axis(side=1, at = seq(1,length(fen), 415*2), 
+     labels = round(as.numeric(colnames(Spectrum_data7[,fen])[
+       seq(1,length(fen), 415*2)]),2))
+lines(Baseline[fen, nspectr],col=Col2 , lty = 1)
+legend("topleft", bty = "n", legend = c(expression(paste("Estimated baseline ", (italic(Z(nu))))),"Spectrum (F)"), 
+       col=c(Col2, Col1),  lty = 1, cex = cex.legend, lwd=1.5)
+
+
+plot(Re(Spectrum_data7[nspectr,fen]), mgp = c(2.2, 1, 0), col=Col1, type="l", ylab = "Intensity", xaxt = "n", 
+     xlab="ppm", main="Spectrum with subtracted baseline estimate (real part - zoom)")
+lines(rep(0,length(fen)), col = Col2, lty = 2)
+axis(side=1, at = seq(1,length(fen), 415*2), 
+     labels = round(as.numeric(colnames(Spectrum_data7[,fen])[
+       seq(1,length(fen), 415*2)]),2))
+
+dev.off()
+
+
+# Warping ===========================
+
+# pdf("Warping.pdf", width = 7, height=7)
+pdf(file.path(fig.path,"Warping.pdf"), width = 7, height=7)
+par(mfrow=c(2,1),mar=c(3.5,3.5,1.5,1))
+# , xpd=TRUE
+# }else {f = 1}
+f = c(21, 20, 24)
+yli = c(0, max(c(Re(Spectrum_dataB[c(nspectr, f),fen]), Re(Spectrum_dataA[c(nspectr, f),fen]))))
+# fen = c(18175:18550)
+fen = c(35560:36480)
+graphics::plot(Re(Spectrum_dataB[nspectr,fen]), mgp = c(2.2, 1, 0),  xaxt = "n",lty = 1, col=Col2, ylab = "Intensity",ylim=yli, type="l", xlab="ppm", main="Spectra before warping (real part - zoom)")
+graphics::legend("topright", bty = "n", y.intersp = 0.8,legend=c("Unwarped spectra ","Ref. spectrum "), lty = c(1,1), cex=cex.legend, col=c(Col1,Col2), lwd=1.5)    
+axis(side=1,  at = seq(1,length(fen), 114), 
+     labels = round(as.numeric(colnames(Spectrum_dataB[,fen])[
+       seq(1,length(fen), 114)]),2))
+for (j in f) {
+  graphics::lines(Re(Spectrum_dataB[j,fen]), col=Col1, type="l")}
+
+graphics::plot(Re(Spectrum_dataA[nspectr,fen]), mgp = c(2, 1, 0), lty = 1, col=Col2, xaxt = "n",ylab = "Intensity",ylim=yli, type="l", xlab="ppm", main="Warped spectra (real part - zoom)")
+graphics::legend("topright",   bty = "n",  y.intersp = 0.8, legend=c("Warped spectra ","Ref. spectrum "), lty = c(1,1), cex=cex.legend, col=c(Col1,Col2), lwd=1.5)    
+axis(side=1,  at = seq(1,length(fen), 114), 
+     labels = round(as.numeric(colnames(Spectrum_dataB[,fen])[
+       seq(1,length(fen), 114)]),2))
+for (j in f) {
+  graphics::lines(Re(Spectrum_dataA[j,fen]), col=Col1, type="l")}
+
+dev.off()
+
+
+
+## Bucketing methods ==========================
+
+require(pBrackets)
+
+cex.text = 1.8
+cex.axis = 1.7
+# pdf("Bucket_Rect_trap.pdf", width = 7, height=7)
+pdf(file.path(fig.path,"Bucket_Rect_trap.pdf"), width = 7, height=7)
+#===================================  A. integration
+par(mfrow=c(3,1))
+par(mar=c(4,2.5,2,1))
+vec = sample(1:10,12,replace = TRUE)
+vect = c(3, 6, 2, 8)
+l = length(vect)
+vect1 = c(vec[1:4], vect, vec[5:8])
+x=c(1:12)
+plot(x, vect1,ylim = c(1,10), xlim=c(1,12), xaxt="n", cex.axis = 1.4 ,ylab = "", pch = 16, xlab="")
+axis(side=1, at=c(1:12),labels = FALSE)
+axis(side=1, at=c(4, 9),cex.axis = cex.axis,labels=c(expression(ppm["min,j"]), expression(ppm["max,j"])),line=0.3,col="forestgreen",col.ticks="forestgreen",col.axis="forestgreen")
+axis(side=1, at=c(4.25, 8.25),cex.axis = cex.axis, labels=c(expression(ppm["1,j"]), expression(ppm["k,j"])),line=-13.5,col="red",col.axis="red")
+text(1.5,11, "      A. Area to integrate", xpd= TRUE, font=2, cex = cex.text)
+
+# inner segments
+s = c(4:8)
+ss = c(1:6)
+xxx <- c(4.25, 5,6,7,8,8.25)
+vect2 <- c((vect[1]- vec[4])*0.25 + vec[4], vect, (vec[5] - vect[4])*0.25 + vect[4])
+segments(xxx[ss],vect2[ss], xxx[ss+1], vect2[ss+1],lty=1)
+
+# outer segment
+s_out <- seq(length(vect1)-1)  # one shorter than data
+s_out = s_out[-s]  
+segments(x[s_out],vect1[s_out], x[s_out+1], vect1[s_out+1],lty=2)
+segments(x[4],vect1[4], 4.25, (vect[1]- vec[4])*0.25 + vec[4],lty=2)
+segments(8.25,(vec[5] - vect[4])*0.25 + vect[4], x[9], vect1[9],lty=2)
+
+
+par(new=TRUE)
+
+polycurve <- function(x, y, base.y = min(y), ...) {
+  polygon(x = c(min(x), x, max(x)), y = c(base.y, y, base.y), ...)
+}
+
+# ss=c(0, c(vec[4], vect, vec[5]), 0)
+
+ss <- c(0, (vect[1]- vec[4])*0.25 + vec[4], vect, (vec[5] - vect[4])*0.25 + vect[4], 0)
+
+# xx= seq(4,9,1)
+xx <- c(4.25, 5,6,7,8,8.25)
+s=c(4.25,xx,8.25)
+
+polycurve(x =s, y = ss,  col="blue", density=15)
+
+# dev.off()
+# polycurve(x =c(4,4,4.25,4.25), y = c(0, vec[4], (vect[1]- vec[4])*0.25 + vec[4], 0),  col="green", density=12, angle = -45)
+# polycurve(x =c(8.5,8.5,9,9), y = c(0, (vec[5] - vect[4])*0.5 + vect[4], vec[5], 0),  col="green", density=12, angle = -45)
+
+abline(v=c(4.25,8.25), lwd=1.5, col="red")
+abline(v=c(4, 9), lty=2, col = "forestgreen")
+
+
+#=================================== B. rectangular integration
+
+s = c(4:8)
+vect = c(3, 6, 2, 8)
+l = length(vect)
+vect1 = c(vec[1:4], vect, vec[5:8])
+x=c(1:12)
+plot(x, vect1,ylim = c(1,10), xlim=c(1,12), xaxt="n", ylab = "", cex.axis = 1.4 ,pch = 16, xlab="")
+axis(side=1, at=c(1:12),labels = FALSE)
+axis(side=1, at=c(4, 9),cex.axis = cex.axis,labels=c(expression(ppm["min,j"]), expression(ppm["max,j"])),line=0.3,col="forestgreen",col.ticks="forestgreen",col.axis="forestgreen")
+axis(side=1, at=c(4.25, 8.25),cex.axis = cex.axis, labels=c(expression(ppm["1,j"]), expression(ppm["k,j"])),line=-13.5,col="red",col.axis="red")
+text(1.5,11, "B. Rectangular", xpd= TRUE, font=2, cex = cex.text)
+
+# inner segments
+ss = c(1:6)
+xxx <- c(4.25, 5,6,7,8,8.25)
+vect2 <- c((vect[1]- vec[4])*0.25 + vec[4], vect, (vec[5] - vect[4])*0.25 + vect[4])
+segments(xxx[ss],vect2[ss], xxx[ss+1], vect2[ss+1],lty=1)
+
+# outer segment
+s_out <- seq(length(vect1)-1)  # one shorter than data
+s_out = s_out[-s]  
+segments(x[s_out],vect1[s_out], x[s_out+1], vect1[s_out+1],lty=2)
+segments(x[4],vect1[4], 4.25, (vect[1]- vec[4])*0.25 + vec[4],lty=2)
+segments(8.25,(vec[5] - vect[4])*0.25 + vect[4], x[9], vect1[9],lty=2)
+
+par(new=TRUE)
+
+polycurve <- function(x, y, base.y = min(y), ...) {
+  polygon(x = c(min(x), x, max(x)), y = c(base.y, y, base.y), ...)
+}
+
+# ss=c(0, rep(c(vec[4], vect, vec[5]),  each = 2), 0)
+# xx= seq(4.5,8.5,1)
+# s=c(rep(c(4,xx,9),  each = 2))
+
+ss=c(0, rep(c(vec[4], vect),  each = 2), 0)
+xx= c(4.25, 4.5,5.5,6.5,7.5, 8.25)
+s=rep(xx,  each = 2)
+
+
+polycurve(x =s, y = ss,  col="blue", density=15)
+
+# polycurve(x =c(4,4,4.25,4.25), y = c(0, vec[4], vec[4], 0),  col="green", density=12, angle = -45)
+# polycurve(x =c(8.5,8.5,9,9), y = c(0, vec[5], vec[5], 0),  col="green", density=12, angle = -45)
+
+segments(3.5, 0, x1 = 3.5, y1 = vec[4], lty=3, col="black")
+segments(3.5, vec[4], x1 = 4.25, y1 = vec[4], lty=3, col="black")
+segments(x0 = seq(4.5, 7.5),y0=0,  y1 = c(vec[4],vect[1:3] ), col="blue")
+segments(8.5, 0, x1 = 8.5, y1 = vect[4], lty=3, col="black")
+segments(8.25, vect[4], x1 = 8.5, y1 = vect[4], lty=3, col="black")
+
+
+abline(v=c(4.25,8.25), lwd=1.5, col="red")
+abline(v=c(4, 9), lty=2, col = "forestgreen")
+
+
+#=================================== C. trapeziodal integration
+par(mar=c(6,2.5,2,1))
+vect = c(3, 6, 2, 8)
+l = length(vect)
+vect1 = c(vec[1:4], vect, vec[5:8])
+x=c(1:12)
+plot(x, vect1,ylim = c(1,10), xlim=c(1,12), xaxt="n", ylab = "", pch = 16, cex.axis = 1.4 , xlab="")
+axis(side=1, at=c(1:12),labels = FALSE)
+axis(side=1, at=c(4, 9),cex.axis = cex.axis,labels=c(expression(ppm["min,j"]), expression(ppm["max,j"])),line=0.3,col="forestgreen",col.ticks="forestgreen",col.axis="forestgreen")
+axis(side=1, at=c(4.25, 8.25),cex.axis = cex.axis, labels=c(expression(ppm["1,j"]), expression(ppm["k,j"])),line=-11.5,col="red",col.axis="red")
+
+brackets(x1=8.5, y1=-2, x2=4.25, y2=-2, h = 0.3, ticks = 0.5, curvature = 0.5, type = 1,
+         col = 1, lwd = 1, lty = 1, xpd = TRUE)
+mtext(expression(b["j"]), at = 6.5, line=4, side=1, cex = 1.2)
+
+text(1.5,11, "C. Trapeziodal", xpd= TRUE, font=2, cex = cex.text)
+# s <- seq(length(vect1)-1)  # one shorter than data
+s = c(4:8)
+
+# inner segments
+ss = c(1:6)
+xxx <- c(4.25, 5,6,7,8,8.25)
+vect2 <- c((vect[1]- vec[4])*0.25 + vec[4], vect, (vec[5] - vect[4])*0.25 + vect[4])
+segments(xxx[ss],vect2[ss], xxx[ss+1], vect2[ss+1],lty=1)
+
+# outer segment
+s_out <- seq(length(vect1)-1)  # one shorter than data
+s_out = s_out[-s]  
+segments(x[s_out],vect1[s_out], x[s_out+1], vect1[s_out+1],lty=2)
+segments(x[4],vect1[4], 4.25, (vect[1]- vec[4])*0.25 + vec[4],lty=2)
+segments(8.25,(vec[5] - vect[4])*0.25 + vect[4], x[9], vect1[9],lty=2)
+
+# area to integrate
+par(new=TRUE)
+
+box = c(vec[4], vect, vec[5])
+ymid = (box[2:6]+box[1:5])/2
+
+# ss=c(0, rep(ymid,  each = 2), 0)
+# xx= seq(5,8,1)
+# s=c(rep(c(4,xx,9),  each = 2))
+# 
+# polycurve(x =s, y = ss,  col="blue", density=10)
+
+ss <- c(0, (vect[1]- vec[4])*0.25 + vec[4], vect, (vec[5] - vect[4])*0.25 + vect[4], 0)
+xx <- c(4.25, 5,6,7,8,8.25)
+s=c(4.25,xx,8.25)
+polycurve(x =s, y = ss,  col="blue", density=15)
+
+segments(x0=5:8,y0=0, y1 = vect,col="blue")
+
+
+abline(v=c(4.25,8.25), lwd=1.5, col="red")
+abline(v=c(4, 9), lty=2, col = "forestgreen")
+
+
+
+# polycurve(x =c(4,4,4.25,4.25), y = c(0, ss[2], ss[2], 0),  col="green", density=12, angle = -45)
+# polycurve(x =c(8.5,8.5,9,9), y = c(0, ss[10], ss[10], 0),  col="green", density=12, angle = -45)
+
+# =================================== 
+
+dev.off()
+
+# 
+# last_plot()
