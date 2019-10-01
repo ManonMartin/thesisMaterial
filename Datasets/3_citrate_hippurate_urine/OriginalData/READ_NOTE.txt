@@ -1,0 +1,24 @@
+
+Les fichiers txt sont ceux contenus dans le Rdata.
+nb: le jour 4 n'a pas fctionné
+
+P1P = spectres de la plaque du jour 1
+P2P = spectres de la plaque du jour 2
+P3P = spectres de la plaque du jour 3
+P5P = spectres de la plaque du jour 5
+
+des1 = design des spectres du jour 1
+des2 =                             2
+....
+
+
+Le RData: MA_PLAQUE_PIC comprend les données préparées au mieux à la fin des recherches de Marie-Adeline
+
+- 600ppms
+- normalisées par la somme (somme de chaque spectre =1)
+- citrate agrégé en un pic (pour éliminer instabilité due au ph, on aggrège plusieurs variables)
+- exclusion (mise à zéro) des zones d'eau et urée (pics non informatifs)
+
+Rem:
+- on utilise pas ceux de Liège (qualité très bof)
+- 
