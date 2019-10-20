@@ -1,0 +1,2320 @@
+---
+title: "LiMM-PCA with the Sensory Data"
+author: "Manon Martin"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output:
+  html_document:
+    smart: FALSE
+    code_folding: hide
+    collapsed: yes
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 9
+    highlight: tango
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r setup, include=FALSE}
+rm(list=ls())
+
+knitr::opts_chunk$set(echo = TRUE)
+
+require(here)
+proj.path <- here()
+setwd(proj.path)
+
+
+data_path <- "../../Datasets/5_sensory"
+
+fig_path <- "outputs"
+out_path <- "outputs"
+
+
+require(MBXUCL)
+require(lme4)
+require(plyr)
+require(pander)
+require(grid)
+require(stringr)
+library(gridExtra)
+require(ggplot2)
+require(cowplot)
+library(stringr) # add leading zeros to volunteer number
+require(reshape2)
+require(spatstat) # compute quantiles based on 
+require(emdbook) # mixture chi2
+require(ggpubr)
+library("tidyr") # for gather function
+
+# Source code for LiMMPCA
+source("LIB/dimreducPCA.R")
+source("LIB/parlmer.R")
+source("LIB/parlmer_interaction.R")
+
+
+
+# colors
+darkblue <- rgb(12,34,75, maxColorValue=255)
+lightblue <- rgb(216,216,216, maxColorValue=255)
+turquoise <- "mediumturquoise"
+violetred <- "mediumvioletred"
+gray67 <- "gray67"
+limegreen <-  "limegreen"
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+```
+
+# Data set up
+
+```{r}
+load(file.path(data_path, "Candies.RData"))
+
+pander("table(design$Judges, design$Candies)")
+pander(table(design$Judges, design$Candies))
+
+raw_outcomes <- outcomes
+
+
+
+df <- data.frame(raw_outcomes, design)
+library(doBy)
+
+
+pander(table_summary_mean)
+
+# Mean attributes values by judges
+table_summary_mean <- summaryBy(. ~ Judges , data = df, 
+  FUN = mean )
+
+
+res <-as.matrix(table_summary_mean[,-1])
+
+par(xpd=TRUE, mar =c(2,2,2,6))
+barplot(res, beside = TRUE, col=rainbow(11), 
+        main = "mean rating per judge and attribute")
+legend("topright", inset = c(-0.2,0), legend = paste0("As", 1:11), 
+       col = rainbow(11), pch=15)
+
+
+
+```
+
+
+# remove outliers ??
+```{r}
+exclude <- FALSE
+
+if(exclude){
+  index <- which(!rownames(raw_outcomes) %in% c("0211", "0713"))
+  raw_outcomes <- raw_outcomes[index,]
+  design <- design[index,]
+}
+
+```
+
+
+```{r}
+Candies <- design$Candies
+Judges <- design$Judges
+```
+
+
+## Article graph
+
+```{r}
+# pdf(file.path(fig_path, "SDA_outcomes.pdf"), width = 8, height = 5,
+#     pointsize=13)
+par(mar=c(4,4,2,5), xpd = TRUE)
+col <- gg_color_hue(n=5)[design$Candies]
+# col <- rainbow(n=5)[design$Candies]
+outcomes <- as.matrix(outcomes)
+plot( outcomes[1,], type="l",  xaxt="n",
+     ylim=range(outcomes), col=col[1],
+     xlab="Attribute", ylab = "Rating", main = "Sensory Data outcomes")
+for (i in 2:dim(outcomes)[1]){
+  lines(outcomes[i,], col=col[i])
+}
+axis(side=1, at = 1:9, labels = colnames(outcomes))
+legend("topright", legend=levels(design$Candies), 
+       col=rainbow(n=5), lwd=1, title="Candies", 
+       inset=c(-0.14,0), box.col = "white")
+
+# dev.off()
+```
+
+## Hotelling T^2 for outlier detection
+
+```{r}
+require(mdatools)
+
+model = pca(raw_outcomes, scale = FALSE, cv = 10, 
+            info = 'Simple PCA model', lim.type = "jm")
+# model$ncomp.selected
+ncomp <- 4
+
+# plotVariance(model)
+
+# plotResiduals(model, show.labels = TRUE, ncomp = ncomp, 
+#               main = "Squared residual distance vs Hotelling T2 distance", 
+#               norm = TRUE)
+
+# plotResiduals(model, show.labels = TRUE, ncomp = ncomp, 
+#               main = "Squared residual distance vs Hotelling T2 distance")
+
+Qlim <- model$Qlim
+T2lim <- model$T2lim
+rownames(Qlim)[2] <- rownames(T2lim)[2] <- "Out_limit"
+
+
+
+# In case of PCA the critical limits are just shown 
+# on residual plot as lines and can be used for detection 
+# of extreme objects (solid line) and outliers (dashed line).
+
+plot_hotelling <- function(){
+  xlim <- range(model$calres$T2[,ncomp])
+  xlim[1] <- xlim[1]*0.9
+  xlim[2] <- xlim[2]*1.1
+  ylim <- range(model$calres$Q[,ncomp])
+  ylim[1] <- ylim[1]*0.9
+  ylim[2] <- ylim[2]*1.1
+  plot(model$calres$T2[,ncomp], model$calres$Q[,ncomp], 
+     main = "Diagnostic plot for score and residual outliers", xlab = "Hotelling T2 distance", 
+     ylab ="Squared residual distance", pch = 16, xlim = xlim, ylim = ylim)
+  abline(h=Qlim["Out_limit",ncomp], v=T2lim["Out_limit",ncomp], lty =3)
+  legend("topright", legend = "Outlier limit", lty = 3)
+  index1 <- which(model$calres$T2[,ncomp]>=T2lim["Out_limit",ncomp])
+  index2 <- which(model$calres$Q[,ncomp]>=Qlim["Out_limit",ncomp])
+  index_ho <- unique(c(index1,index2))
+  text(x = model$calres$T2[index_ho,ncomp], y=model$calres$Q[index_ho,ncomp], 
+       labels = names(model$calres$T2[index_ho,ncomp]), pos = c(1,2,3,4))
+}
+
+plot_hotelling()
+
+# pdf(file.path(fig_path,"SDA_hotelling.pdf"), height = 6, width = 6)
+plot_hotelling()
+# dev.off()
+
+```
+
+
+# Dimension reduction by PCA
+```{r}
+
+n = nrow(raw_outcomes)
+###################################################
+# Dimension reduction by PCA
+###################################################
+
+# ===== PCA ===== #
+
+res_pca <- MBXUCL::SVDforPCA(x = raw_outcomes)
+
+pander("Cumulated variance")
+pander(res_pca$cumvar)
+
+barplot(res_pca$var, main="screeplot", ylab="% var", ylim=c(0,80))
+
+```
+
+## PCA plots
+
+```{r, out.width='50%', fig.show='hold'}
+df <- data.frame(PC = as.character(1:length(res_pca$var)),
+                 var = res_pca$var)
+
+screePlot <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+          labs(title= "PCA scree plot",
+                        x = "PC", y="% var")+theme_classic()
+
+index <- 27
+pch <- c("1"=15, "2"=2, "3"=19, "4"=4, "5"=8)
+scoresPlot <- DrawScores(res_pca, axes=c(1,2),drawNames = FALSE, 
+           main  = "PCA scores plot", 
+           pch = Candies, size=2, 
+           legend_shape_manual  = pch) +
+   coord_cartesian(xlim = c(-25, 25), ylim = c(-15, 15)) +
+  annotate("text", y = (res_pca$scores[index,2] +
+                                1*c(1)),
+                  x = res_pca$scores[index,1],
+                  label = rownames(res_pca$scores[,1:2])[index])
+
+
+loadPlot <- ScatterPlot(res_pca$loadings[,1], res_pca$loadings[,2], 
+                        points_labs = rownames(res_pca$loadings), cex.lab=4) +
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1) + 
+  xlab(label=paste0("PC1 (", round(res_pca$var[1],2),"%)")) +
+         ylab(paste0("PC2 (", round(res_pca$var[2],2),"%)")) +
+   coord_cartesian(xlim = c(-0.5, 0.5), ylim = c(-0.8, 0.8)) +
+  ggtitle(label = "PCA loadings plot")
+
+
+```
+
+## Apply first step of LiMMPCA (PCA)
+```{r}
+
+res_pca <- dimreducPCA(data = raw_outcomes, pcvar = 99)
+
+nPC <-dim(res_pca$pca_scores)[2]
+spectra_PCA_scores <- res_pca$pca_scores
+spectra_PCA_loadings <- res_pca$pca_loadings
+
+centeringFactor <- colMeans(outcomes)
+
+# outcomes
+outcomes <- spectra_PCA_scores
+rownames(outcomes) <- rownames(design)
+
+```
+
+
+## Article graph
+```{r, fig.height=3}
+PCA_plots <- ggarrange(screePlot, scoresPlot, loadPlot,
+                ncol = 3, nrow = 1,
+                widths  = c(0.3, 1,  0.85))
+
+PCA_plots
+
+# ggexport(PCA_plots, filename = file.path(fig_path,"SDA_PCA_outcomes.pdf"),
+#          height = 5, width = 14)
+
+```
+
+
+
+# Tests with univariate ANOVA
+
+```{r}
+
+mat <- cbind(subject=1:dim(design)[1], design,  outcomes)
+mat$subject <- as.factor(mat$subject)
+
+########################
+# for one response 
+########################
+
+# res_aov <- aov(PC1 ~ Candies*Judges + Error(subject/Judges), data=mat)
+
+# sumar <- summary(res_aov)
+
+# sumar <- sumar[[1]][[1]]
+
+#                   Df  Sum Sq Mean Sq  F value  Pr(>F)    
+# Candies             4 31470.6  7867.7 780.1762 < 2e-16 ***
+# Judges          10   224.9    22.5   2.2304 0.02089 *  
+# Candies:Judges  40   707.7    17.7   1.7545 0.01158 *  
+# Residuals         110  1109.3    10.1                     
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+# MeanSq <- sumar$`Mean Sq`
+# names(MeanSq) <- gsub(" ", "", rownames(sumar))
+
+# MeanSq["Candies"]
+# MeanSq["Judges"]
+# MeanSq["Candies:Judges"]
+# MeanSq["Residuals"]
+# 
+# MeanSq["Candies"]/MeanSq["Candies:Judges"]
+# MeanSq["Judges"]/MeanSq["Residuals"]
+# MeanSq["Candies:Judges"]/MeanSq["Residuals"]
+
+########################
+# for all the responses
+########################
+sumar_list <- vector(mode="list", length=nPC)
+
+pvalues <- matrix(data = NA, nrow=nPC, ncol=3, 
+                  dimnames = list(NULL, c( "Candies","Judges","Candies:Judges")))
+
+for (i in 1:nPC){
+  form <- paste(paste0("PC",i), "~ Candies*Judges + Error(subject/Judges)")
+  res_aov <- suppressWarnings(aov(as.formula(form), data=mat))
+  sumar_list[[i]] <- summary(res_aov)[[1]][[1]]
+  cat("PC ", i)
+  print(sumar_list[[i]])
+ 
+ # pvalues
+  nam <- rownames(sumar_list[[i]])
+  nam <-  trimws(nam , which = c("both", "left", "right"))
+  meanSq <- sumar_list[[i]]$`Mean Sq`
+  names(meanSq) <- nam
+  Df <- sumar_list[[i]]$Df
+  names(Df) <- nam
+  
+  pval_Candies <- pf(meanSq["Candies"]/meanSq["Candies:Judges"],
+                     df1=Df["Candies"], df2=Df["Candies:Judges"], 
+                     lower.tail = FALSE)
+  pval_Judges <-  pf(meanSq["Judges"]/meanSq["Residuals"], 
+                     df1=Df["Judges"], df2=Df["Residuals"], 
+                     lower.tail = FALSE)
+  pval_CA  <-  pf(meanSq["Candies:Judges"]/meanSq["Residuals"],
+                  df1=Df["Candies:Judges"], df2=Df["Residuals"], 
+                     lower.tail = FALSE)
+  pval <- c(Candies=pval_Candies,
+               Judges=pval_Judges, 
+               CA=pval_CA)
+  pvalues[i,] <- pval
+
+}
+
+
+# p-values 
+pander("p-values")
+pander(pvalues)
+pvalues <= 0.05
+
+pander("Bonferroni corrected p-values")
+pval_corrected <- t(round(pvalues*(nPC*3),4))
+pval_corrected[pval_corrected>1]=1
+pander(pval_corrected)
+
+# bonferroni corrected
+pvalues <= 0.05/(nPC*3)
+
+# write.csv(round(pvalues,4), file = file.path(out_path, "pvaluesBC.csv"))
+```
+
+
+# GLM decomposition with fixed effects
+
+## Model definition
+
+```{r, echo=TRUE}
+directoryInput <- "LIB"
+
+# lecture des routines de Michel Thiel
+directorymichel <-file.path(paste0(directoryInput,"/CodeMThiel"))
+source(file.path(directorymichel, "permutationTest.R"))
+source(file.path(directorymichel, "matrixDecomposition.R"))
+
+# formula
+formula <- as.formula(outcomes ~  Candies +  Judges +  Candies*Judges) 
+```
+
+
+## GLM decomposition
+
+```{r, echo=TRUE}
+# Décomposition de Y en matrice des effets par GLM
+
+resGLM <- matrixDecomposition(formula,outcomes,design)
+modelMatrix <- sapply(resGLM$modelMatrixByEffect, function(x) x)
+
+nparam <- sum(sapply(modelMatrix, function(x) dim(x)[2]))-1
+
+# construction de la liste des matrices des effets purs
+EffectMatGLM <- resGLM$effectMatrices[-1] # minus intercept
+
+res <- vector(mode = "list")
+res[[1]]  <- resGLM$residuals
+
+EffectMatGLM <- c(EffectMatGLM, residuals=res) # plus residuals
+
+pander("names(EffectMatGLM)")
+names(EffectMatGLM)
+
+ModelTerms <- names(EffectMatGLM)
+```
+
+
+## scores/loadings generic graphs
+
+```{r, echo=TRUE, eval=TRUE, out.width='50%'} 
+
+listgraphs <- list()
+varASCA <- list()
+
+for(i in 1:length(ModelTerms)) {
+  # PCA sur les matrices des effets non augmentées
+  ascaSVD = SVDforPCA(EffectMatGLM[[i]])
+  ascaSVD$scores=round(ascaSVD$scores,5)
+  varASCA[[i]] <- ascaSVD$var
+  
+  # Graphe des scores avec coloration 
+  a = DrawScores(ascaSVD, type.obj = "PCA", drawNames = TRUE,
+                 createWindow = F, 
+                 main = paste0(ModelTerms[i],"score plot - ASCA-GLM"), 
+                 color = as.factor(Judges), 
+                 pch = as.factor(Candies), axes = c(1, 2),size=2.5)
+
+  # Graphe des Loadings
+ b = ScatterPlot(ascaSVD$loadings[,1], 
+                         ascaSVD$loadings[,2], 
+                         points_labs = rownames(ascaSVD$loadings),
+                          cex.lab = 3)+
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  labs(title = paste0(ModelTerms[i],"- loadings plot - ASCA-GLM"), x=paste0("PC1 (", round(ascaSVD$var[1],2), "%)"), y=paste0("PC2 (", round(ascaSVD$var[2],2), "%)"))
+  
+  listgraphs[[paste0(ModelTerms[i],"_scores")]] <- a
+  listgraphs[[paste0(ModelTerms[i],"_loadings")]] <- b
+}
+
+listgraphs
+
+```
+
+
+# Parallel mixed modelling
+
+
+```{r, cache=FALSE, out.width='50%'}
+###################################################
+# Parallel mixed modelling
+###################################################
+
+### Coding the interaction -------------------
+CandiesJudges <- model.matrix(~ Candies:Judges-1, 
+                                 data = design)
+
+
+# number of parameters for the interaction
+num <- 1:dim(CandiesJudges)[2]
+
+
+for (i in 1:dim(CandiesJudges)[2]){
+ CandiesJudges[which(CandiesJudges[,i]!=0),i] = i
+}  
+
+CandiesJudges <- rowSums(CandiesJudges)
+CandiesJudges <- as.factor(CandiesJudges)
+
+# New design with the coded interaction
+designInter <- cbind(design,CandiesJudges)
+
+
+### parallel LMM 
+#######################
+
+form <- "~ Candies +  (1|Judges) +  (1|CandiesJudges)"
+
+REML <- TRUE
+
+# run parlmer -------------------
+
+# Modification de parlmer (=> parlmer_interaction) pour obtenir des matrices d'effet qui soient orthogonales 2 a 2.
+res.parlmer <- parlmer_interaction(design=designInter, outcomes, form, REML)
+
+
+MM_full <- res.parlmer
+
+pander("summary for the firt response")
+summary(res.parlmer$merMod_obj$PC1)
+
+
+# save the results -------------------
+
+RanModMatlist <- res.parlmer$RanModMatlist
+
+# head(RanModMatlist$`1 | CandiesJudges`)
+# head(RanModMatlist$`1 | Judges`)
+
+FixedModMatlist <- res.parlmer$FixedModMatlist
+# head(FixedModMatlist$Candies)
+# head(FixedModMatlist$`(Intercept)`)
+
+# Residuals sd error
+Res_std_error_PC <- sapply(MM_full$merMod_obj, sigma)
+
+# Residuals
+Residuals_PC <- sapply(MM_full$merMod_obj, residuals)
+
+# ranef(MM_full$merMod_obj$PC3, condVar=FALSE) # FIXME Doesnt work with condVar=TRUE
+
+### ranef_PC: Extract the modes of the random effects
+ranef_PC <- sapply(MM_full$merMod_obj, function(x) unlist(ranef(x, condVar=FALSE)))
+
+# recover accurate rownames and colnames of ranef_PC
+list_rownam <- lapply(ranef(MM_full$merMod_obj$PC1, condVar=FALSE), rownames)
+
+colnam <- paste0(names(ranef(MM_full$merMod_obj$PC1, condVar=FALSE)), 
+                 lapply(ranef(MM_full$merMod_obj$PC1, condVar=FALSE), rownames))
+
+colnam <- rownames(ranef_PC) #(?)
+
+rownames(ranef_PC) <- colnam
+rownames(ranef_PC) <- gsub("..(Intercept))", "", rownames(ranef_PC))
+
+### fixef: Extract fixed-effects estimates
+fixef_PC <- sapply(MM_full$merMod_obj, fixef)
+
+### all fixed estimates and random predictions
+cof_PC <- rbind(fixef_PC, ranef_PC)
+
+### Extract Variance and Correlation Components
+varcor_random_full <- sapply(MM_full$merMod_obj, VarCorr) # Std.Dev.
+# varcor_random_full[,1]
+# dat <- as.numeric(rbind(varcor_random_full))
+# varcor_random_full_mat <- matrix(dat, nrow=2, 
+#                                  dimnames = dimnames(varcor_random_full))
+# 
+
+### varcor_fixed
+varcor_fixed_full <- sapply(MM_full$merMod_obj, function(x) sqrt(diag(vcov(x)))) # Std.Dev.
+
+rownames(varcor_fixed_full) <- rownames(vcov(MM_full$merMod_obj[[1]]))
+
+
+##### Names of the effects
+fixNames <- MM_full$fixNames # names of fixed effects
+
+ranNames <- MM_full$ranNames # names of random effects
+
+```
+
+
+
+# Effect matrix computation
+
+```{r}
+###################################################
+# Effect matrix
+###################################################
+## Computation
+
+# fixed effects + intercept -----------------------------
+dim1FixedModMad <- sapply(FixedModMatlist, function(x) dim(x)[2])
+names_FixedEffects <- names(FixedModMatlist)
+shortFixedNames <- gsub("[^A-z]", "", names_FixedEffects)
+
+Xmat <- do.call(cbind, FixedModMatlist)
+
+# colnames(Xmat) %in% rownames(fixef_PC)
+Xmat <- Xmat[,rownames(fixef_PC)] # reorder colnames of Xmat
+
+index <- cumsum(dim1FixedModMad)
+k <- 1
+Mfix <- vector("list", length=length(shortFixedNames))
+Mfix_PC <- vector("list", length=length(shortFixedNames))
+names(Mfix) <- shortFixedNames
+for (i in 1:length(shortFixedNames)){
+  XMfix = Xmat
+  XMfix[,-c(k:index[i])] = 0
+  Mfix_PC[[i]] = XMfix %*% fixef_PC
+  Mfix[[i]] <- Mfix_PC[[i]]%*%t(spectra_PCA_loadings)
+  k <-  index[i] + 1
+}
+
+M0 <- Mfix[[1]]
+
+Mfix <- Mfix[-1]
+Mfix_PC <- Mfix_PC[-1]
+
+
+# random effects -----------------------------
+dim1RandModMad <- sapply(RanModMatlist, function(x) dim(x)[2])
+names_randomEffects <- names(RanModMatlist)
+shortRandNames <- gsub("[^A-z]", "", names_randomEffects)
+# rbind(rownames(RanModMatlist$`1 | Judges`),rownames(RanModMatlist$`1 | CandiesJudges`)) # ok
+Zmat <- do.call(cbind, RanModMatlist)
+colnames(Zmat) <- paste0(rep(shortRandNames, dim1RandModMad),colnames(Zmat))
+
+# colnames(Zmat) %in% rownames(ranef_PC)
+
+index <- cumsum(dim1RandModMad)
+k <- 1
+Mrand <- vector("list", length=length(ranNames))
+names(Mrand) <- ranNames
+for (i in 1:length(shortRandNames)){
+  XMrand = Zmat
+  XMrand[,-c(k:index[i])] = 0
+  Mrand_PC = XMrand %*% ranef_PC
+  Mrand[[i]] <- Mrand_PC%*%t(spectra_PCA_loadings)
+  k <-  index[i] + 1
+}
+
+# Residuals  -----------------------------
+Mres_PC <- Residuals_PC
+Mres <- Mres_PC%*%t(spectra_PCA_loadings)
+Mres_full <- Mres
+
+```
+
+# Are all the estimated effect matrices orthogonal ?
+```{r}
+
+pander("t(Mrand$CandiesJudges)%*%Mrand$Judges")
+pander(t(Mrand$CandiesJudges)%*%Mrand$Judges)
+
+# unique(Ma[,1])
+# unique(Mca[,1])
+# 
+# colSums(Ma)
+# colSums(Mca)
+
+
+pander("t(Mfix$Candies)%*%(Mrand$CandiesJudges)")
+pander(t(Mfix$Candies)%*%(Mrand$CandiesJudges))
+
+```
+
+
+# PCA on the effect matrices
+
+## PCA on the pure effect matrices
+```{r, out.width = "50%"}
+###################################################
+## PCA on the effect matrices
+###################################################
+
+
+## Fixed effects -------------------------------
+loadingsFix <- vector(mode = "list", length = length(Mfix))
+for (i in 1:length(Mfix)){
+  print(names(Mfix[i]))
+  dimnames(Mfix[[i]]) <- dimnames(raw_outcomes)
+  res_pca <- SVDforPCA(Mfix[[i]])
+  res_pca$scores <- round(res_pca$scores, 6)
+  
+  barplot(res_pca$var[1:10], main  = "scree plot")
+   
+  print(DrawScores(res_pca, size=3, color = design[,names(Mfix[i])],
+                         main = paste("Scores plot"),
+                   axes=c(1,2), drawNames=FALSE))
+
+  print(DrawScores(res_pca, size=3, color = design[,names(Mfix[i])],
+             main = paste("Scores plot"), axes=c(3,4), 
+        drawNames=FALSE))
+  
+  load <- DrawLoadings(res_pca, type.obj = "PCA", createWindow = F,
+                       main = paste("Loadings plot"),
+                       axes = c(1:4), loadingstype = "s",
+                       num.stacked = 4, nxaxis = 9,
+                       ang = "0",
+                       xaxis_type = "character")
+  
+    load2 <- ScatterPlot(res_pca$loadings[,1], 
+                         res_pca$loadings[,2], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 5)
+    
+    load3 <- ScatterPlot(res_pca$loadings[,3], 
+                         res_pca$loadings[,4], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 5)
+    print(load[[1]])
+    print(load2)
+    print(load3)
+    loadingsFix[[i]] <-  load
+}
+
+
+# Candies
+#####################
+res_pca <- SVDforPCA(Mfix$Candies)
+
+df <- data.frame(PC = as.character(1:9),var = res_pca$var)
+df <- df[1:7,]
+screeplotCandies <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+                   labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+           
+# screeplotCandies
+
+loadCandies <- ScatterPlot(res_pca$loadings[,1], 
+                         res_pca$loadings[,2], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 3)+
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  coord_cartesian(xlim = c(-0.5, 0.5), ylim = c(-1, 1))+
+  labs(title = "PCA loadings on pure effect matrix", x=paste0("PC1 (", round(res_pca$var[1],2), "%)"),
+       y=paste0("PC2 (", round(res_pca$var[2],2), "%)"))
+
+col <- c("1"=violetred, "2" = darkblue)
+pch <- c("1"= 2, "2"= 4)
+
+DrawScores(res_pca, main = "PCA Scores", 
+           color = Candies, pch = Candies, 
+           drawNames = FALSE, drawPolygon  = FALSE, drawEllipses = FALSE,
+           noLegend = FALSE, size=2) 
+
+
+
+## Random effects -------------------------------
+loadingsRand <- vector(mode = "list", length = length(Mrand))
+for (i in 1:length(Mrand)){
+  print(names(Mrand[i]))
+  dimnames(Mrand[[i]]) <- dimnames(raw_outcomes)
+  res_pca <- SVDforPCA(Mrand[[i]])
+  
+  barplot(res_pca$var[1:10], main  = "scree plot")
+
+  res_pca$scores <- round(res_pca$scores, 6)
+  print(DrawScores(res_pca, size=3, color = design$Judges,
+                   pch=design$Candies,
+                   main = paste("Scores plot"),
+                   axes=c(1,2), drawNames=FALSE))
+
+  print(DrawScores(res_pca, size=3, color = design$Judges,
+                   pch=design$Candies,
+                   main = paste("Scores plot"), axes=c(3,4), 
+                   drawNames=FALSE))
+  
+ 
+  load <- DrawLoadings(res_pca, axes=c(1:4), type.obj = "PCA",
+                       xaxis_type = "character",
+                       loadingstype = "s",  xlab = "ppm", nxaxis = 9,
+                       main = paste("Loadings plot:"))
+    
+  load2 <- ScatterPlot(res_pca$loadings[,1], 
+                       res_pca$loadings[,2], 
+                       points_labs = rownames(res_pca$loadings),
+                          cex.lab = 5)
+
+   
+    load3 <- ScatterPlot(res_pca$loadings[,3], 
+                         res_pca$loadings[,4], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 5)
+    print(load[[1]])
+    print(load2)
+    print(load3)
+  loadingsRand[[i]] <-  load
+}
+
+# Judges
+res_pca <- SVDforPCA(Mrand$Judges)
+df <- data.frame(PC = as.character(1:length(res_pca$var)),
+                 var = res_pca$var)
+df <- df[1:7,]
+screeplotJudges <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+              labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+
+  
+# screeplotJudges
+loadJudges <- ScatterPlot(res_pca$loadings[,1], 
+                         res_pca$loadings[,2], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 3)+
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  coord_cartesian(xlim = c(-0.8, 0.8), ylim = c(-0.6, 0.6))+
+  labs(title = "PCA loadings on pure effect matrix", x=paste0("PC1 (", round(res_pca$var[1],2), "%)"), y=paste0("PC2 (", round(res_pca$var[2],2), "%)"))
+
+col <- c("1"=violetred, "2" = darkblue)
+pch <- c("1"= 2, "2"= 4)
+
+Judges_scores <- DrawScores(res_pca, 
+              main = "PCA Scores", 
+           color = Judges, pch = Judges, 
+           drawNames = FALSE, drawPolygon  = FALSE, drawEllipses = FALSE,
+           noLegend = FALSE, size=2) 
+
+
+# CandiesJudges
+res_pca <- SVDforPCA(Mrand$CandiesJudges)
+df <- data.frame(PC = as.character(1:length(res_pca$var)),
+                 var = res_pca$var)
+df <- df[1:7,]
+screeplotCandiesJudges <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+          labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+
+# screeplotCandiesJudges
+loadCandiesJudges <- ScatterPlot(res_pca$loadings[,1], 
+                         res_pca$loadings[,2], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 3) +
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  coord_cartesian(xlim = c(-0.8, 0.8), ylim = c(-0.6, 0.6)) +
+  labs(title = "PCA loadings on pure effect matrix", x=paste0("PC1 (", round(res_pca$var[1],2), "%)"), y=paste0("PC2 (", round(res_pca$var[2],2), "%)"))
+
+
+pureScoresCandiesJudges <- DrawScores(res_pca,
+            main = "PCA Scores on the pure effect matrix",
+           color = Candies,
+           pch = Judges, drawNames = FALSE, 
+           drawPolygon = FALSE, drawEllipses   = FALSE,
+           noLegend = FALSE, size=2) +
+  coord_cartesian(xlim = c(-4, 4), ylim = c(-3, 3))
+
+pureScoresCandiesJudges <- pureScoresCandiesJudges + 
+  theme(legend.text=element_text(size=10), legend.key.height=unit(0.7,"line"))
+
+```
+
+
+
+
+
+## PCA on the augmented effect matrices
+
+### addSegments fun
+```{r}
+addSegments <- function(group, data, pch=16, main = NULL, 
+                        col = rainbow(n = length(unique(group))),
+                        ...) {
+  
+  group <- as.factor(group)
+  
+  # col <- rainbow(n = length(unique(group)))
+  
+  plot(data$x, data$y, col=col[group], pch=pch, main=main, ...)
+  
+  group <- as.factor(group)
+  xcent <- tapply(data[,1], group, FUN=mean)
+  ycent <- tapply(data[,2], group, FUN=mean)
+  centers <- data.frame(xcent=xcent, ycent=ycent)
+  
+  mapply(FUN = points, x = centers$xcent, y = centers$ycent, 
+         col = col, MoreArgs = list(pch=20, cex=0.7))
+  
+  submatrices <- split(x=data, f=group)
+  for (i in 1:nlevels(group)){
+    mapply(FUN = segments, x1 = submatrices[[i]]$x, 
+           y1 = submatrices[[i]]$y, col = col[i],
+           MoreArgs = list(x0 = centers$xcent[i], 
+                           y0 = centers$ycent[i]))
+  }
+  
+  
+}
+```
+
+Augmented plots:
+
+
+* Candies: Mc + Mca
+* Assessor: Ma + E
+* Candies:Assessor : Mca + E
+
+
+### ASCA-E
+```{r}
+a <- nlevels(design$Candies)
+b <- nlevels(design$Judges)
+nn <- table(design$Judges,design$Candies)[1,1]
+```
+
+```{r}
+# Candies
+##################
+# pander("Candies")
+ascaSVD = SVDforPCA(Mfix$Candies)
+Fstat <- qf(.95, df1=(a-1), df2=((a-1)*(b-1))) 
+coef <- sqrt(Fstat/(b-1))
+ascaSVD$scores[,1:2]=(Mfix$Candies + ((Mrand$CandiesJudges)*coef)) %*%
+                        ascaSVD$loadings[,1:2]
+
+
+Candies_scores <- DrawScores(ascaSVD, 
+                             main = "PCA Scores on pure/augmented effect matrix",
+           color = Candies, pch = Candies, 
+           drawNames = FALSE, drawPolygon  = FALSE, drawEllipses = TRUE,
+           noLegend = FALSE, size=2) 
+
+
+# Judges
+##################
+# pander("Judges")
+ascaSVD = SVDforPCA(Mrand$Judges)
+df1 <- (b-1)
+df2 <- (a*b*(nn-1))
+Fstat <- qf(.95, df1=df1, df2=df2) 
+coef <- sqrt(Fstat*df1/df2)
+
+ascaSVD$scores[,1:2]=(Mrand$Judges+(Mres*coef))%*%
+            ascaSVD$loadings[,1:2]
+Judges_scores <- DrawScores(ascaSVD, type.obj = "PCA", 
+                               drawNames = F, createWindow = F, 
+           main = "PCA Scores on augmented effect matrix", color = Judges, 
+           pch = Judges, axes = c(1, 2),size=2, drawPolygon = FALSE, 
+           drawEllipses = TRUE)
+
+# Judges_scores
+
+
+# CandiesJudges
+##################
+# pander("CandiesJudges")
+ascaSVD = SVDforPCA(Mrand$CandiesJudges)
+
+df1 <- (a-1)*(b-1)
+df2 <- (a*b*(nn-1))
+Fstat <- qf(.95, df1=df1, df2=df2) 
+coef <- sqrt(Fstat*df1/df2)
+
+ascaSVD$scores[,1:2]=(Mrand$CandiesJudges+(Mres*coef))%*%
+          ascaSVD$loadings[,1:2]
+
+
+
+CJ <- as.factor(paste0(design$Candies, design$Judges))
+index <- c(145,147,27, 109, 110)
+
+data <- ascaSVD$scores[,1:2]
+group <- as.factor(CJ)
+xcent <- tapply(data[,1], group, FUN=mean)
+ycent <- tapply(data[,2], group, FUN=mean)
+xc <- yc <- c()
+for (i in 1:length(group)){
+  xc[i] <- xcent[group[i]]
+  yc[i] <- ycent[group[i]]
+}
+
+df <- data.frame(data, xcent=xc, ycent = yc, CJ=CJ,
+                 Judges =design$Judges, Candies=design$Candies)
+
+# Eigenvalues
+eig <- ascaSVD$eigval
+# Variances in percentage
+variance <- eig * 100/sum(eig)
+Xax=1
+Yax=2
+XaxName <- paste0("PC", Xax, " (", round(variance[Xax], 2),"%)")
+YaxName <- paste0("PC", Yax, " (", round(variance[Yax], 2), "%)")
+xlab <- XaxName
+ylab <- YaxName
+Xlim <- c(min(ascaSVD$scores[, Xax]) * 1.4, max(ascaSVD$scores[, Xax]) * 1.4)
+Ylim <- c(min(ascaSVD$scores[, Yax]) * 1.4, max(ascaSVD$scores[, Yax]) * 1.4)
+main = "PCA Scores on augmented effect matrix"
+
+plots <- ggplot(df,aes(x=xc,y=yc))+
+  geom_point(df, mapping=aes(x=PC1,y=PC2, shape=Candies, color=Judges),size=2) +
+  geom_segment(aes(yend=PC2,xend=PC1,color=Judges,group=CJ)) + 
+  ggplot2::xlim(Xlim) + ggplot2::ylim(Ylim)  +
+            scale_shape_manual(values=seq(0,26), name = "Candies")
+
+plots <- plots + ggplot2::labs(title = main, x = xlab, y = ylab) + 
+  ggplot2::geom_vline(xintercept = 0,size = 0.1) + 
+  ggplot2::geom_hline(yintercept = 0, size = 0.1) + ggplot2::theme_bw() +
+  ggplot2::theme(panel.grid.major = 
+                   ggplot2::element_line(color = "gray60", size = 0.2), 
+                 panel.grid.minor = ggplot2::element_blank(),
+                 panel.background = ggplot2::element_rect(fill = "gray98"))
+
+plots <- plots + theme(legend.text=element_text(size=10), legend.key.height=unit(0.7,"line"))+
+  annotate("text", y = (ascaSVD$scores[index,2] +
+                                1.7*c(-1 , -1)),
+                         x = ascaSVD$scores[index,1],
+                         label = row.names(outcomes[index,1:2]))
+
+CA_scores <- plots
+# CA_scores
+
+mat <- data.frame(x=ascaSVD$scores[,1],y=ascaSVD$scores[,2])
+group <- as.factor(paste0(Candies,Judges))
+# table(group)
+
+# pdf(file.path(fig_path,"SDA_ScoresCJEM_linkbyCJ.pdf"))
+addSegments(group=group, data=mat, main = "Scores plot C*J effect matrix \n color by CandiesJudges", ylab = "PC2", xlab = "PC1")
+abline(h=0, v=0, lty=2, lwd =1,col="black")
+# dev.off()
+
+
+```
+
+
+
+### Interaction graphs
+
+#### Pure scores
+
+```{r, fig.height=3}
+# 1. Pure scores
+#############################
+pander("Pure scores")
+res_pca <- SVDforPCA(Mrand$CandiesJudges)
+id <- which(!duplicated(res_pca$scores[,1]))
+df <- as.data.frame(cbind(Candies=Candies[id], 
+                 Judges = Judges[id],
+                 scores = res_pca$scores[id,]))
+
+
+df$Candies <- as.factor(df$Candies)
+df$Judges <- as.factor(df$Judges)
+
+a <- ggplot(data=df, aes(x=Candies, y=PC1)) + 
+  geom_point(aes(colour = Judges, shape = Judges), size=3) +  
+  scale_shape_manual(values = c(0:10)) + 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+
+b <- ggplot(data=df, aes(x=Judges, y=PC1)) + 
+  geom_point(aes(colour = Candies, shape =Candies), size=3)+ 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+
+
+c <- ggplot(data=df, aes(x=Candies, y=PC2)) + 
+  geom_point(aes(colour = Judges, shape = Judges), size=3) +  
+  scale_shape_manual(values = c(0:10))+ 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+
+d <-ggplot(data=df, aes(x=Judges, y=PC2))+
+  geom_point(aes(colour = Candies, shape =Candies), size=3)+ 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+
+
+
+```
+
+```{r}
+# ggexport(ggarrange(a, c, common.legend=TRUE, legend="right"), 
+#          filename = file.path(fig_path,"SDA_Scores_CAinteraction.pdf"),
+#          height = 4, width = 12)
+
+# pdf(file  = file.path(fig_path,"SDA_Scores_CAinteraction.pdf"),
+#     height = 4, width = 12)
+grid.arrange(a, c, nrow=1,widths=c(1,  0.85),
+             top=textGrob("PCA scores on augmented C*J effect matrix",gp=gpar(fontsize=20,font=2)))
+# dev.off()
+```
+
+
+#### Augmented scores
+
+```{r, fig.height=3}
+# 2. Augmented scores
+#############################
+pander("Augmented scores")
+a <- nlevels(design$Candies)
+b <- nlevels(design$Judges)
+nn <- table(design$Judges,design$Candies)[1,1]
+
+pander("CandiesJudges")
+res_pca = SVDforPCA(Mrand$CandiesJudges)
+
+df1 <- (a-1)*(b-1)
+df2 <- (a*b*(nn-1))
+Fstat <- qf(.95, df1=df1, df2=df2) 
+coef <- sqrt(Fstat*df1/df2)
+
+res_pca$scores[,1:2]=(Mrand$CandiesJudges+(Mres*coef))%*%
+          res_pca$loadings[,1:2]
+
+
+
+df <- as.data.frame(cbind(Candies=Candies[id], 
+                 Judges = Judges[id],
+                 scores = res_pca$scores[id,]))
+
+dimnames(df)
+df$Candies <- as.factor(df$Candies)
+df$Judges <- as.factor(df$Judges)
+
+a <- ggplot(data=df, aes(x=Candies, y=PC1)) + geom_point(aes(colour = Judges, shape = Judges), size=3) +  
+  scale_shape_manual(values = c(0:10)) + 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+
+b <- ggplot(data=df, aes(x=Judges, y=PC1)) + geom_point(aes(colour = Candies, shape =Candies), size=3)+ 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+# interPC1 <- grid.arrange(a, b)
+
+c <- ggplot(data=df, aes(x=Candies, y=PC2)) + geom_point(aes(colour = Judges, shape = Judges), size=3) +  
+  scale_shape_manual(values = c(0:10))+ 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+
+d <-ggplot(data=df, aes(x=Judges, y=PC2))+geom_point(aes(colour = Candies, shape =Candies), size=3)+ 
+  geom_hline(yintercept=0, linetype=3, color = "black")
+# interPC2 <- grid.arrange(c, d)
+
+
+a
+b
+c
+d
+
+
+```
+
+```{r}
+# ggexport(ggarrange(a, c, common.legend=TRUE, legend="right"), 
+#          filename = file.path(fig_path,"SDA_Scores_CAinteraction_aug.pdf"),
+#          height = 4, width = 12)
+
+# pdf(file  = file.path(fig_path,"SDA_Scores_CAinteraction_aug.pdf"),
+#     height = 4, width = 12)
+grid.arrange(a, c, nrow=1,widths=c(1,  1),
+             top=textGrob("PCA scores on augmented C*J effect matrix",gp=gpar(fontsize=20,font=2)))
+# dev.off()
+```
+
+
+### Residuals
+
+```{r}
+
+index <- c(10, 27)
+res_pca <- SVDforPCA(Mres)
+
+df <- data.frame(PC = as.character(1:length(res_pca$var)),
+                 var = res_pca$var)
+df <- df[1:7,]
+screeplot_resid <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+          labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+
+scores_resid <- DrawScores(res_pca, drawNames = FALSE, 
+                           color = Candies, 
+           pch = Judges, main ="PCA scores",
+           size = 2) +
+  coord_cartesian(xlim = c(-16, 16), ylim = c(-18, 18))+ 
+  theme(legend.text=element_text(size=10), legend.key.height=unit(0.7,"line"))+
+  annotate("text", y = (res_pca$scores[index,2] +
+                                1.7*c(-1 , -1)),
+                         x = res_pca$scores[index,1],
+                         label = rownames(res_pca$scores[index,1:2]))
+
+
+  
+loadings_resid <- ScatterPlot(res_pca$loadings[,1], 
+                         res_pca$loadings[,2], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 3)+
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  labs(title = "PCA  loadings", 
+       x=paste0("PC1 (", round(res_pca$var[1],2), "%)"), y=paste0("PC2 (", round(res_pca$var[2],2), "%)")) +
+  coord_cartesian(xlim = c(-0.85, 0.85), ylim = c(-0.5, 0.5))
+
+# Saving scores and loadings
+
+# pdf(file.path(fig_path,"SDA_Scores_Loadings_Residuals.pdf"), 
+#     height = 4, width = 10)
+grid.arrange(scores_resid, loadings_resid,nrow=1,widths=c(1, 0.85))
+# dev.off()
+
+
+
+c <- DrawScores(res_pca, drawNames = FALSE, color = Candies, axes = c(3,4),
+           pch = Judges, main ="PCA scores on the residuals",
+           size = 2) 
+
+d <-  ScatterPlot(res_pca$loadings[,3], 
+                         res_pca$loadings[,4], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 3)+
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  labs(title = "PCA  loadings on the residuals", 
+       x=paste0("PC3 (", round(res_pca$var[3],2), "%)"), 
+       y=paste0("PC4 (", round(res_pca$var[4],2), "%)"))
+
+grid.arrange(c, d,nrow=1,widths=c(1, 0.83))
+
+e <- DrawScores(res_pca, drawNames = FALSE, color = Candies, axes = c(5,6),
+           pch = Judges, main ="PCA scores on the residuals",
+           size = 2) 
+
+f <-  ScatterPlot(res_pca$loadings[,5], 
+                         res_pca$loadings[,6], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 3)+
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  labs(title = "PCA  loadings on the residuals", 
+       x=paste0("PC5 (", round(res_pca$var[5],2), "%)"), y=paste0("PC6 (", round(res_pca$var[6],2), "%)"))
+
+grid.arrange(e, f,nrow=1,widths=c(1, 0.83))
+
+
+g <- DrawScores(res_pca, drawNames = FALSE, color = Candies, axes = c(7,8),
+           pch = Judges, main ="PCA scores on the residuals",
+           size = 2) 
+
+h <-  ScatterPlot(res_pca$loadings[,7], 
+                         res_pca$loadings[,8], 
+                         points_labs = rownames(res_pca$loadings),
+                          cex.lab = 3)+
+  geom_vline(xintercept = 0, lwd=0.1) + 
+  geom_hline(yintercept = 0, lwd=0.1)+
+  labs(title = "PCA  loadings on the residuals", 
+       x=paste0("PC7 (", round(res_pca$var[7],2), "%)"), y=paste0("PC8 (", round(res_pca$var[8],2), "%)"))
+
+grid.arrange(g, h,nrow=1,widths=c(1, 0.83))
+
+
+
+#addSegments
+mat <- data.frame(x=res_pca$scores[,1],y=res_pca$scores[,2])
+group <- as.factor(paste0(Candies,Judges))
+table(group)
+
+# pdf(file.path(fig_path,"SDA_ScoresResidualsEM_linkbyCJ.pdf"))
+addSegments(group=group, data=mat, main = "Scores plot residuals effect matrix \n color by CandiesJudges", ylab = "PC2", xlab = "PC1")
+abline(h=0, v=0, lty=2, lwd =1,col="black")
+# dev.off()
+```
+
+
+```{r, eval=FALSE}
+# outliers detected
+index <- which(design$Judges=="07" & design$Candies=="1")
+tab_a <- raw_outcomes[index,]
+rownames(tab_a) <- paste0("07_1_",1:3)
+
+index <- which(design$Judges=="02" & design$Candies=="1")
+tab_b <- raw_outcomes[index,]
+rownames(tab_b) <- paste0("02_1_",1:3)
+
+ggexport(ggtexttable(tab_a, theme = ttheme("classic")), 
+         filename =
+           file.path(fig_path,"SDA_Residuals_outcomes_07_1.pdf"),
+         height = 2, width = 6)
+
+ggexport(ggtexttable(tab_b, theme = ttheme("classic")), 
+         filename =
+           file.path(fig_path,"SDA_Residuals_outcomes_02_1.pdf"),
+         height = 2, width = 6)
+```
+
+
+### Article graphs
+```{r}
+
+Scores_Loadings_EffectMat <- ggarrange(screeplotCandies, 
+                                       Candies_scores,
+                                       loadCandies, 
+                                       screeplotJudges,
+                                       Judges_scores,
+                                       loadJudges, 
+                                       screeplotCandiesJudges, 
+                                       CA_scores,
+                                       loadCandiesJudges,
+          labels = c("A", "B", "C", "D", "E", "F", "G", "H", "I"),
+          ncol = 3, nrow = 3, common.legend=TRUE, widths = c(0.8,2,2))
+
+Scores_Loadings_EffectMat
+
+# ggexport(Scores_Loadings_EffectMat, filename = file.path(fig_path,"SDA_Scores_Loadings_EffectMat.pdf"),
+#          height = 12, width = 12)
+
+
+a <- grid.arrange(screeplotCandies, Candies_scores,
+              loadCandies, nrow=1,widths=c(0.3, 1,  0.85),
+             top=textGrob("Candy effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+b <-  grid.arrange(screeplotJudges, Judges_scores,
+               loadJudges, nrow=1,widths=c(0.3, 1,  0.85),
+             top=textGrob("Judge effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+
+c <- grid.arrange(screeplotCandiesJudges, 
+              CA_scores, loadCandiesJudges,
+              nrow=1,widths  = c(0.3, 1,  0.85),
+             top=textGrob("C*J effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+d <- grid.arrange(screeplot_resid, 
+              scores_resid, loadings_resid,
+              nrow=1,widths  = c(0.3, 1,  0.85),
+             top=textGrob("Residual effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+# Thesis chapter output
+# pdf(file.path(fig_path,"SDA_Scores_Loadings_EffectMat.pdf"),
+#          height = 15, width = 14)
+# ggarrange(a,b,c, nrow=3, labels = c("A", "B", "C"))
+# dev.off()
+
+# journal article output
+# pdf(file.path(fig_path,"SDA_Scores_Loadings_EffectMat.pdf"),
+#          height = 20, width = 14)
+ggarrange(a,b,c,d,  nrow=4, labels = c("A", "B", "C", "D"))
+# dev.off()
+
+
+
+```
+
+
+# Pourcentage de variance expliquée
+
+## Method from Nakagawa and Schielzeth (2012)
+
+```{r, out.width = "50%", fig.show='hold'}
+####################################################
+# Pourcentage de variance expliquée
+####################################################
+## Method from Nakagawa and Schielzeth (2012)
+
+# Random effects -----------------------------------
+sigma2_res = Res_std_error_PC^2 # Residual
+varcor_random_full <- as.data.frame(varcor_random_full)
+Var_Mrand <- rbind(varcor_random_full, sigma2_res=sigma2_res) # only random effects
+Var_Mrand <- data.matrix(Var_Mrand)
+
+
+
+# fixed effect -----------------------------------
+Var_Mfix <- c()
+for (i in 1:length(fixNames)){
+  #  variance of parameters values (population)
+  Var_Mfix <- rbind(Var_Mfix, (apply(Mfix_PC[[i]], 2, var) *(n - 1) / n))
+}
+
+
+# # another way to do ====================
+# 
+# # full model with ML
+# form <- "~ Candies +  (1|Judges) +  (1|CandiesJudges)"
+# # form <- "~ Candies + (1|Judges) + (0 + Candies|Judges)"
+# REML <- FALSE
+# # Bidouillage dans parlmer pour obtenir des matrices d'effet qui soient orthogonales 2 a 2.
+# res.parlmer_full <- parlmer_interaction(design=designInter, outcomes, form, REML)
+# 
+# 
+# # models without the effect of interest
+# null_formulas <- list(Candies = "~ (1|Judges) +  (1|CandiesJudges)",
+#                        Judges = "~ Candies +  (1|CandiesJudges)",
+#                        CandiesJudges = "~Candies +  (1|Judges)")
+# 
+# null_effects <- names(null_formulas)
+# 
+# REML <- c(FALSE, TRUE, TRUE)
+# names(REML) <- null_effects
+# 
+# res.parlmer_null <- vector(mode = "list")
+# for (i in 1:length(null_formulas)){
+#   res.parlmer_null[[i]] <- parlmer_interaction(design=designInter, 
+#                                                       outcomes, form = null_formulas[[i]], 
+#                                                       REML=REML[i])
+# }
+# names(res.parlmer_null) <- null_effects
+# 
+# # random effects NULL -----------------------------
+# # save the results
+# RanModMatlist <- res.parlmer_null$Candies$RanModMatlist
+# dim1RandModMad <- sapply(RanModMatlist, function(x) dim(x)[2])
+# names_randomEffects <- names(RanModMatlist)
+# shortRandNames <- gsub("[^A-z]", "", names_randomEffects)
+# # rbind(rownames(RanModMatlist$`1 | Judges`),rownames(RanModMatlist$`1 | CandiesJudges`)) # ok
+# Zmat <- do.call(cbind, RanModMatlist)
+# colnames(Zmat) <- paste0(rep(shortRandNames, dim1RandModMad),colnames(Zmat))
+# 
+# # colnames(Zmat) %in% rownames(ranef_PC)
+# # cbind(colnames(Zmat) , rownames(ranef_PC))
+# # Zmat <- Zmat[,rownames(ranef_PC)] # reorder colnames of Zmat
+# 
+# index <- cumsum(dim1RandModMad)
+# k <- 1
+# Mrand <- vector("list", length=length(ranNames))
+# names(Mrand) <- ranNames
+# for (i in 1:length(shortRandNames)){
+#   XMrand = Zmat
+#   XMrand[,-c(k:index[i])] = 0
+#   Mrand_PC = XMrand %*% ranef_PC
+#   Mrand[[i]] <- Mrand_PC%*%t(spectra_PCA_loadings)
+#   k <-  index[i] + 1
+# }
+# Mrand_null <- Mrand
+# 
+# # random effects FULL -----------------------------
+# # save the results
+# RanModMatlist <- res.parlmer_full$RanModMatlist
+# dim1RandModMad <- sapply(RanModMatlist, function(x) dim(x)[2])
+# names_randomEffects <- names(RanModMatlist)
+# shortRandNames <- gsub("[^A-z]", "", names_randomEffects)
+# # rbind(rownames(RanModMatlist$`1 | Judges`),rownames(RanModMatlist$`1 | CandiesJudges`)) # ok
+# Zmat <- do.call(cbind, RanModMatlist)
+# colnames(Zmat) <- paste0(rep(shortRandNames, dim1RandModMad),colnames(Zmat))
+# 
+# # colnames(Zmat) %in% rownames(ranef_PC)
+# # cbind(colnames(Zmat) , rownames(ranef_PC))
+# # Zmat <- Zmat[,rownames(ranef_PC)] # reorder colnames of Zmat
+# 
+# index <- cumsum(dim1RandModMad)
+# k <- 1
+# Mrand <- vector("list", length=length(ranNames))
+# names(Mrand) <- ranNames
+# for (i in 1:length(shortRandNames)){
+#   XMrand = Zmat
+#   XMrand[,-c(k:index[i])] = 0
+#   Mrand_PC = XMrand %*% ranef_PC
+#   Mrand[[i]] <- Mrand_PC%*%t(spectra_PCA_loadings)
+#   k <-  index[i] + 1
+# }
+# Mrand_full <- Mrand
+# 
+# # residuals
+# Residuals_PC <- sapply(res.parlmer_full$merMod_obj, residuals)
+# Mres_PC <- Residuals_PC
+# Mres_full <- Mres_PC%*%t(spectra_PCA_loadings)
+# 
+# Residuals_PC <- sapply(res.parlmer_null$Candies$merMod_obj, residuals)
+# Mres_PC <- Residuals_PC
+# Mres_null <- Mres_PC%*%t(spectra_PCA_loadings)
+# 
+# # E
+# E_null <- Mres_null+Mrand_null$CandiesJudges+Mrand_null$Judges
+# E_full <- Mres_full+Mrand_full$CandiesJudges+Mrand_full$Judges
+# 
+# E_null_norm <- norm(Mres_null, "F")^2 + norm(Mrand_null$CandiesJudges, "F")^2 +
+#   norm(Mrand_null$Judges, "F")^2
+# E_full_norm <- norm(Mres_full, "F")^2 + norm(Mrand_full$CandiesJudges, "F")^2 +
+#   norm(Mrand_full$Judges, "F")^2
+# 
+# (E_null_norm-E_full_norm)
+# sum(Var_Mfix)
+# 
+# norm(Mfix_PC[[1]], "F")^2
+# 
+
+# all together -----------------------------------
+rownames(Var_Mfix) <- fixNames
+rownames(Var_Mrand) <- c(ranNames, "Residuals")
+var_comp <- rbind(Var_Mfix, Var_Mrand)
+var_comp <- var_comp[c(1,3,2,4),]
+
+# log of var comp +++++
+log_var_comp <- t(log1p(var_comp)) # log(x+1)
+log_var_comp <- cbind(id=rownames(log_var_comp), log_var_comp)
+log_var_comp <- as.data.frame(log_var_comp)
+log_var_comp <- melt(log_var_comp, id=c("id"))
+log_var_comp$value <- as.numeric(log_var_comp$value)
+
+names(log_var_comp) <- c("PC", "Effect", "Variance")
+  
+sum_var_comp <- rowSums(var_comp)
+
+# Percent var expl by each effect -----
+var_comp_m1_abs <- sum_var_comp
+var_comp_m1 <- var_comp_m1_abs*100/sum(var_comp_m1_abs)
+names(var_comp_m1) <- rownames(var_comp)
+
+
+# pdf(file.path(fig.path,"variance_components.pdf"), height = 3, width = 3, pointsize = 12)
+par(mar=c(0.5,2,3,0.5))
+barplot(var_comp_m1, main="Variance components \n percentage",xaxt="n",las=2, col=c(darkblue,turquoise,violetred , limegreen, gray67), border = NA,
+ 	legend = names(var_comp_m1), args.legend = list(x="topright", 
+ 	                                             inset=c(0,0),box.lty=0,cex = 0.7, 
+ 	                                             y.intersp = 0.8))
+# dev.off()
+
+
+table_var <- rbind(var_comp_m1_abs, var_comp_m1)
+rownames(table_var) <- c("Sum variance for all responses", "percentage of variation")
+colnames(table_var) <- rownames(var_comp)
+pander(table_var)
+
+# write.csv(table_var, file =  file.path(fig_path,"SDA_table_var.csv"))
+```
+
+
+## Article graph
+
+```{r}
+p <- ggplot(log_var_comp, aes(Effect, Variance, group = PC))+
+  ggtitle("SDA - Log of variance components")
+
+p <- p + geom_point(aes(colour = PC))+ 
+  geom_line(aes(colour = PC, linetype=PC),size=0.5)+
+  theme(legend.key.width = unit(0.8,"cm")) + ylab(label = "log(variance)")
+
+p
+# Thesis chapter output
+# ggexport(p, filename = file.path(fig_path,"SDA_variance_components.pdf"),
+#          height = 5, width = 6.5, pointsize=16)
+
+tab <- data.frame(Effect= names(var_comp_m1), pcvar = round(var_comp_m1,2))
+var_comp_m1.table <- ggtexttable(tab, cols = c("Effect", "Global var (%)"), 
+                                 rows = NULL, 
+                                 theme = ttheme("classic",base_size = 10))
+
+p <- p + annotation_custom(ggplotGrob(var_comp_m1.table),
+                              xmin = 6, ymin = 3,
+                              xmax = 0)
+# journal article output
+# ggexport(p, filename = file.path(fig_path,"SDA_variance_components.pdf"),
+#          height = 5, width = 6.5, pointsize=16)
+p
+```
+
+
+# Bootstrap
+
+## Set up
+```{r}
+
+# set up of the bootstrap
+set.seed(2018)
+nsim = 2000 # number of simulations
+
+# name of the output 
+name_RData <- "bootstrap_Sensory_Data.RData"
+
+# Set up -------------------
+# formulas without the effet to test
+null_formulas <- list(Candies = "~ (1|Judges) +  (1|CandiesJudges)",
+                       Judges = "~ Candies +  (1|CandiesJudges)",
+                       CandiesJudges = "~Candies +  (1|Judges)")
+
+null_effects <- names(null_formulas)
+
+REML <- c(FALSE, TRUE, TRUE)
+names(REML) <- null_effects
+
+```
+
+
+## LT calcul 
+
+### True log-likelihood Ratio statistics
+
+
+```{r, eval=TRUE, out.width='50%'}
+##################################################
+# True log-likelihood Ratio statistics      #
+##################################################
+
+
+# full model: MM_full
+######################
+# REML +++++
+loglik_PC_full_REML <- sapply(MM_full$merMod_obj, logLik, REML=T)
+
+# ML +++++
+loglik_PC_full_ML <- sapply(MM_full$merMod_obj, logLik, REML=F)
+
+loglik_PC_full <- matrix(NA, ncol = nPC,
+                         nrow=length(null_formulas), byrow = TRUE)
+for (i in 1:length(REML)){
+  if (REML[i]==TRUE){
+    loglik_PC_full[i,] <- loglik_PC_full_REML
+  }else {loglik_PC_full[i,] <- loglik_PC_full_ML}
+}
+
+
+
+
+### Restricted models  
+######################
+res.parlmer_NULL <- vector("list", length = length(null_formulas))
+names(res.parlmer_NULL) <- names(REML) <- names(null_formulas)
+
+for (i in 1:length(null_formulas)) {
+  # run parlmer
+  res.parlmer_NULL[[i]] <- parlmer(designInter, 
+                                   outcomes, null_formulas[[i]], REML=REML[i])
+}
+
+# Save the results ------------
+MM_PC_null <- lapply(res.parlmer_NULL, function(x) x[["merMod_obj"]])
+
+#### Randvarnames, Fixvarnames
+ranNames <- sapply(res.parlmer_NULL, function(x) x[["ranNames"]])
+Fixvarnames <- sapply(res.parlmer_NULL, function(x) x[["fixNames"]])
+
+
+varcor_random <- vector(mode = "list", length = length(null_formulas))
+fixef_PC <- vector(mode = "list", length = length(null_formulas))
+modmat_fixed <- vector(mode = "list", length = length(null_formulas))
+M0 <- vector(mode = "list", length = length(null_formulas))
+
+for (i in 1:length(null_formulas)){
+  varcor_random[[i]] <- sapply(MM_PC_null[[i]], function(x)
+    as.data.frame(VarCorr(x))$vcov)
+  rownames(varcor_random[[i]]) <- c(names(VarCorr(MM_PC_null[[i]][[1]])),
+                                    "Residual")
+
+  fixef_PC[[i]] <- sapply(MM_PC_null[[i]], fixef)
+
+  modmat_fixed[[i]] <- model.matrix(MM_PC_null[[i]][[1]], type = "fixed")
+
+  # intercept
+  XM0 <- modmat_fixed[[i]]
+  XM0[,-1] <- 0
+  M0_PC <- XM0%*%fixef_PC[[i]]
+  M0[[i]] <- M0_PC%*%t(spectra_PCA_loadings)
+}
+
+# Effect matrices computation ------------
+index <- vector("list", length=length(null_formulas))
+fixNames_int <- lapply(Fixvarnames, function(x) c("(Intercept)", x))
+
+colnam <- sapply(modmat_fixed,  colnames)
+
+index <- vector("list", length=length(Fixvarnames))
+
+for (i in 1:length(null_formulas)){
+  id <- c()
+  for (k in 1:length(fixNames_int[[i]])){
+    id <- c(id, grep(fixNames_int[[i]][[k]], colnam[[i]]))
+  }
+  index[[i]] <- id
+}
+
+
+Mfix <- Mfix_PC <- vector("list", length=length(null_formulas))
+names(Mfix) <- fixNames_int
+
+for (i in 1:length(null_formulas)){
+  XMfix = modmat_fixed[[i]]
+  XMfix[,-c(index[[i]])] = 0
+  Mfix_PC[[i]] = XMfix %*% fixef_PC[[i]] # Matrix of the Groupe effect
+  # backtransform the PC to original coefficients
+  Mfix[[i]] <- Mfix_PC[[i]]%*%t(spectra_PCA_loadings)
+}
+
+
+######################
+# compute the LRT 
+######################
+
+# objects initialisation ------------
+Res_std_error_PC_null <- vector("list", length=length(null_formulas))
+loglik_PC_null <- vector("list", length=length(null_formulas))
+sumlog <- c()
+
+### compute the LRT ----------------------------
+for (i in 1:length(null_formulas)){
+  Res_std_error_PC_null[[i]]  <- sapply(MM_PC_null[[i]], sigma)
+
+  #  sumlog
+  loglik_PC_null[[i]] <- sapply(MM_PC_null[[i]], logLik, REML=REML[i])
+  
+  sumlog[i] <- 2*(sum(loglik_PC_full[i,] - loglik_PC_null[[i]]))
+}
+
+names(sumlog) <- names(null_formulas)
+sumlog_true <- sumlog
+
+# Graphs ----------------------------
+
+col1="blue"
+col2="red"
+par(mar=c(4,3,2,6))
+dif <- vector(mode = "list")
+for (i in 1:length(null_formulas)){
+  # graphs
+  mat <- cbind(loglik_PC_null[[i]], loglik_PC_full[i,])
+  rownames(mat) <- paste0("PC", 1:nPC)
+  col <- c(col1,col2)
+  par(xpd=TRUE)
+  barplot(t(mat), beside=T, ylab="Log-likelihood",
+          cex.names=0.8, las=2, col=col, 
+          main = paste("log-likelihoods",names(null_formulas)[i]),
+          xpd=TRUE)
+  legend("topright", legend = c("loglik restricted","loglik full"),
+         fill = col, bty = "n", inset=c(-0.1,0))
+  
+  dif[[i]] <- 2*(mat[,2] - mat[,1])
+  
+  
+}
+
+
+
+```
+
+
+
+## Booststrap tests 
+
+```{r, eval=FALSE}
+### Bootstrap ---------------------------------------
+# bootstrapLT input arguments:
+# MM_null = MM_PC_null$volunteer
+# useREML=TRUE
+# null_formula <- null_formulas[[i]]
+
+pander("running bootstrap ...")
+ 
+bootstrapLT <- function(useREML, MM_null, null_formula, design, outcomes) {
+  
+  # simulate y from null models --------
+  nPC <- length(MM_null)
+  simulatedY <- c()
+
+  for (i in 1:nPC){
+    ysim       <- unlist(simulate(MM_null[[i]], re.form=NA))
+    simulatedY <- cbind(simulatedY, ysim)
+    # dim(simulatedY)
+  }
+
+  y <- simulatedY
+  dimnames(y) <- dimnames(outcomes)
+
+  # build restricted model -------
+  f_null <- parlmer_interaction(design, y, null_formula, REML=useREML)
+
+  # build full model -------
+  f_full <- parlmer_interaction(design, y, form, REML=useREML)
+
+  MM_f_null <- f_null$merMod_obj
+  MM_f_full <- f_full$merMod_obj
+
+  # LR -------
+  loglikelihood_null <- sapply(MM_f_null, logLik, REML=useREML)
+ 
+  loglikelihood_full <- sapply(MM_f_full, logLik, REML=useREML)
+ 
+  ratio <- 2*(loglikelihood_full-loglikelihood_null)
+  sumlog <- 2*(sum(loglikelihood_full - loglikelihood_null))
+  
+  return(list(sumlog=sumlog, ratio=ratio))
+  # returns the summed LLR (sumlog) and the LLR per PC (ratio)
+}
+
+
+# test the function bootstrapLT
+bootstrapLT(MM_null = MM_PC_null[["Candies" ]], useREML =REML["Candies" ],
+                      null_formula = null_formulas[["Candies" ]], 
+            design = designInter, outcomes = outcomes)
+
+
+# Boostrapping: Apply bootstrapLT for each effect
+sumlog_boot <- vector("list", length=length(null_formulas))
+ratio_boot <- vector("list", length=length(null_formulas))
+names(sumlog_boot) <- names(ratio_boot) <- null_effects
+
+set.seed(2018)
+for (i in 1:length(null_formulas)){
+  null_effect <- null_effects[i]
+  res = replicate(nsim, bootstrapLT(MM_null = MM_PC_null[[null_effect]],
+               useREML =REML[null_effect],null_formula = null_formulas[[null_effect]],
+              design = designInter, outcomes = outcomes),
+                          simplify = "array")
+  sumlog_boot[[i]] <- res["sumlog", ]
+  sumlog_boot[[i]] <- unlist(sumlog_boot[[i]])
+  ratio_boot[[i]] <- res["ratio", ]
+  ratio_boot[[i]] <- do.call(rbind, ratio_boot[[i]])
+}
+
+
+save(sumlog_boot, sumlog_true,ratio_boot, file=file.path(out_path,name_RData))
+
+```
+
+
+```{r}
+load(file=file.path(out_path, name_RData))
+```
+
+## Boostrap p-values
+```{r, eval=TRUE}
+pval <- c()
+for (i in 1:length(null_formulas)){
+ pval[i] <- (sum(sumlog[i]<sumlog_boot[[i]])+1)/(nsim+1)
+}
+names(pval) <- names(null_formulas)
+
+pander("p-values")
+pval
+
+```
+
+
+### Article graph
+```{r}
+difmat <- do.call(cbind, dif)
+difmat <- data.frame(PC=substr(rownames(difmat),3,3), difmat)
+colnames(difmat) <- c("PC", names(null_formulas))
+difmat <- gather(difmat, key=Effect, value = value, Candies , Judges, CandiesJudges)
+difmat$Effect <- as.factor(difmat$Effect)
+# difmat$Effect <- factor(difmat$Effect,levels(difmat$Effect)[c(2,1,3)])
+difmat$Effect <- factor(difmat$Effect, levels = c("Candies", "Judges", "CandiesJudges"))
+
+LLRplot <- ggplot(data=difmat, aes(x=PC, y=value, fill = Effect)) +
+  geom_bar(width=0.5,stat="identity", position=position_dodge(width=0.5)) +
+  theme_classic()+labs(title="(Restricted) Log-likelihood Ratios") + 
+  ylab(label="(R)LLR") +
+  guides(fill=guide_legend(title="Removed effect"))
+
+
+tab <- paste(c("<", "", "<"), round(pval, 4))
+tab <- data.frame(Effect = names(pval), `p-value` = tab, 
+                  chi2 = c("<5e-04","-", "-"))
+pval_boot.table <- ggtexttable(tab,cols = c("Effect",
+                                            "Boostrapped p-value", "Chi2 test"),
+                                 rows = NULL)
+
+
+
+LLR_pval_plot <- ggarrange(LLRplot, pval_boot.table,
+                ncol = 1, nrow = 2,
+                heights = c(1,  0.3), common.legend = TRUE)
+
+# ggexport(LLR_pval_plot, filename = file.path(fig_path,"SDA_LLR_pval_plot.pdf"),
+#          height = 5, width = 5)
+
+LLR_pval_plot
+
+# journal article output
+
+
+
+p <- LLRplot + annotation_custom(ggplotGrob(pval_boot.table),
+                              xmin = 2, ymin = 100)
+p
+
+# ggexport(p, filename = file.path(fig_path,"SDA_GLLR.pdf"),
+#          width=7, height=4.5, pointsize=5)
+```
+
+### Chapter graph
+
+```{r}
+difmat <- do.call(cbind, dif)
+difmat <- data.frame(PC=substr(rownames(difmat),3,3), difmat)
+colnames(difmat) <- c("PC", names(null_formulas))
+difmat <- gather(difmat, key=Effect, value = value, Candies , Judges, CandiesJudges)
+difmat$Effect <- as.factor(difmat$Effect)
+difmat$Effect <- factor(difmat$Effect,levels(difmat$Effect)[c(2,1,3)])
+
+difmat2 <- cbind(difmat[difmat$Effect=="Candies", "value"],
+                 difmat[difmat$Effect=="Judges", "value"],
+                 difmat[difmat$Effect=="CandiesJudges", "value"])
+dimnames(difmat2) <- list(c(1:8), levels(difmat$Effect))
+
+
+# pdf(file.path(fig_path, "SDA_GLLR.pdf"),width=7, height=6, pointsize = 14)
+par(mar=c(4,4,4,4), xpd=TRUE)
+
+# plotting settings -------------------------------------------------------
+ylim <- range(mat)*c(1,1.5)
+angle1 <- rep(c(45,45,135), length.out=7)
+angle2 <- rep(c(45,135,135), length.out=7)
+density1 <- seq(5,35,length.out=7)
+density2 <- seq(5,35,length.out=7)
+
+op <- par(mar=c(4,3,1,1))
+
+
+barplot(t(difmat2), beside=TRUE,col = gg_color_hue(3),ylab="(R)LLR", xlab="PC", 
+         main = "(Restricted) Log-likelihood Ratios",
+        angle=angle1[c(2,4,6)], density=density1[c(2,4,6)], 
+        ylim = c(0,200))
+barplot(t(difmat2), beside=TRUE, add=TRUE, col = gg_color_hue(3),
+        ylab="GLLR", xlab="PC", 
+         main = "(Restricted) Log-likelihood Ratios",
+        angle=angle2[c(2,4,6)], density=density2[c(2,4,6)], 
+        ylim = c(0,200))
+legend("topright", legend = c("Candies", "Judges", "Candies*Judges"), 
+       title = "Removed effect:", ncol=1, col = gg_color_hue(3),
+       fill=gg_color_hue(3),angle=angle1[c(2,4,6)], density=density1[c(2,4,6)],
+       inset=c(0,0.1))
+par(bg="transparent")
+legend("topright", legend = c("Candies", "Judges", "Candies*Judges"), 
+       title = "Removed effect:",ncol=1, col = gg_color_hue(3),
+       fill=gg_color_hue(3),angle=angle2[c(2,4,6)], density=density2[c(2,4,6)],
+       inset=c(0,0.1))
+# dev.off()
+
+
+# pdf(file.path(fig_path, "SDA_pval.pdf"))
+pval_boot.table
+# dev.off()
+```
+
+
+## Histogram drawings
+
+
+```{r, out.width='50%', fig.show='hold', eval=TRUE}
+names(sumlog_boot) <- casefold(names(null_formulas), upper = FALSE)
+df <- nPC *   4    
+######################
+# Candies
+######################
+# pdf(file = file.path(fig.path, "hist_time.pdf"), width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE, mfrow=c(1,1))
+
+m=hist(sumlog_boot$candies, freq=F, breaks=100, 
+                 xlab="Global Likelihood Ratio Statistic",
+                 xlim=range(sumlog["Candies"], sumlog_boot$candies),
+                 ylim = c(0,0.08),
+                 col = gray67,border = gray67, 
+                 main = " Fixed Candies effect", cex.main = 2.2)
+            lines(density(sumlog_boot$candies), col=darkblue,lwd=2)
+            lines(dchisq(seq(0,max(sumlog_boot$candies)), df),
+                  col= "limegreen", lwd = 4)
+            points(sumlog["Candies"], 0, col="red", pch=19, lwd=6)
+            legend("topright", 
+                   legend = c(paste0("True GLLR: ", round(sumlog["Candies"],2)), 
+                              "Kernel density", 
+                              paste0("chi2 distrib. (df=", df,")")), 
+                   col = c("red", darkblue, "limegreen"),
+                   lty=c(NA,1,1),pch=c(19,NA,NA),
+                   inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+                   y.intersp = 0.8, lwd=c(4))
+            
+# dev.off()      
+# 
+
+######################
+# Judges
+######################
+
+# pdf(file = file.path(fig.path, "hist_volunteer.pdf"), width = 7, height = 5)
+# df*(1/2*dchisq(0:30, 1)+ (1/2*dchisq(0:30, 0)))
+            
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE, mfrow=c(2,1))
+df <- nPC 
+m=hist(sumlog_boot$judges, freq=F, breaks=100, 
+                 xlab="Global Likelihood Ratio Statistic",
+                 xlim=range(sumlog["Judges"], sumlog_boot$judges),
+                 col = gray67,border = gray67, 
+                 main = " Random Judges effect", cex.main = 2.2)
+            lines(density(sumlog_boot$judges), col=darkblue,lwd=2)
+            # lines(0:30,(1/2*dchisq(seq(0,30), df)+ (1/2*dchisq(seq(0,30), 0))),
+            #        col= "limegreen", lwd = 4)
+            points(sumlog["Judges"], 0, col="red", pch=19, lwd=6)
+            legend("topright", 
+                   legend = c(paste0("True GRLLR: ", round(sumlog["Judges"],2)), 
+                              "Kernel density"), 
+                   col = c("red", darkblue), lty=c(NA,1),pch=c(19,NA),
+                   inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+                   y.intersp = 0.8, lwd=c(4))
+# dev.off()  
+
+######################
+# CandiesJudges
+######################
+
+# pdf(file = file.path(fig.path, "hist_sampling.pdf"), width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE, mfrow=c(1,1))
+
+m=hist(sumlog_boot$candiesjudges, freq=F, breaks=100, 
+                 xlab="Global Likelihood Ratio Statistic",
+                 xlim=range(sumlog["CandiesJudges"], sumlog_boot$candiesjudges),
+                 col = gray67,border = gray67, 
+                 main = " Random CandiesJudges effect", cex.main = 2.2)
+            lines(density(sumlog_boot$candiesjudges), col=darkblue,lwd=2)
+            points(sumlog["CandiesJudges"], 0, col="red", pch=19, lwd=6)
+            legend("topright", 
+                   legend = c(paste0("True GRLLR: ",
+                                     round(sumlog["CandiesJudges"],2)), 
+                              "Kernel density"), 
+                   col = c("red", darkblue), lty=c(NA,1),pch=c(19,NA),
+                   inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+                   y.intersp = 0.8, lwd=c(4))
+# dev.off()      
+# 
+
+```
+
+### Article graph
+
+```{r,out.width='50%'}
+names(sumlog_boot) <- casefold(names(null_formulas), upper = FALSE)
+df <- nPC *   4    
+######################
+# Candies
+######################
+# pdf(file = file.path(fig_path, "SDA_hist_Candies.pdf"), 
+#     width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE, mfrow=c(1,1))
+
+m=hist(sumlog_boot$candies, freq=F, breaks=100, 
+                 xlab="Global Likelihood Ratio Statistic",
+                 xlim=range(sumlog["Candies"], sumlog_boot$candies),
+                 ylim = c(0,0.08),
+                 col = gray67,border = gray67, 
+                 main = " Fixed Candies effect", cex.main = 2.2)
+            lines(density(sumlog_boot$candies), col=darkblue,lwd=2)
+            lines(dchisq(seq(0,max(sumlog_boot$candies)), df), 
+                  col= "limegreen", lwd = 4)
+            points(sumlog["Candies"], 0, col="red", pch=19, lwd=6)
+            legend("topright", 
+                   legend = c(paste0("True GLRT: ", round(sumlog["Candies"],2)), 
+                              "Kernel density", 
+                              paste0("chi2 distrib. (df=", df,")")), 
+                   col = c("red", darkblue, "limegreen"),
+                   lty=c(NA,1,1),pch=c(19,NA,NA),
+                   inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+                   y.intersp = 0.8, lwd=c(4))
+            
+# dev.off()      
+
+######################
+# Judges
+######################
+
+# pdf(file = file.path(fig_path, "SDA_hist_Judges.pdf"), width = 7, height = 5)
+# df*(1/2*dchisq(0:30, 1)+ (1/2*dchisq(0:30, 0)))
+            
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE)
+df <- nPC 
+m=hist(sumlog_boot$judges, freq=F, breaks=100, 
+                 xlab="Global Likelihood Ratio Statistic",
+                 xlim=range(sumlog["Judges"], sumlog_boot$judges),
+                 col = gray67,border = gray67, 
+                 main = " Random Judges effect", 
+       cex.main = 2.2)
+            lines(density(sumlog_boot$judges), col=darkblue,lwd=2)
+            # y <- (1/2*dchisq(seq(0,30), df)+ 
+            #         (1/2*dchisq(seq(0,30), 0)))
+           
+            # lines(0:30,y, col= "limegreen", lwd = 4)
+            
+            points(sumlog["Judges"], 0, col="red", pch=19, lwd=6)
+            legend("topright", 
+                   legend = c(paste0("True GLRT: ", round(sumlog["Judges"],2)), 
+                              "Kernel density"), 
+                   col = c("red", darkblue), lty=c(NA,1),pch=c(19,NA),
+                   inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+                   y.intersp = 0.8, lwd=c(4))
+# dev.off()  
+
+######################
+# CandiesJudges
+######################
+
+# pdf(file = file.path(fig_path, "SDA_hist_CandiesJudges.pdf"), width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE, mfrow=c(1,1))
+
+m=hist(sumlog_boot$candiesjudges, freq=F, breaks=100, 
+                 xlab="Global Likelihood Ratio Statistic",
+                 xlim=range(sumlog["CandiesJudges"], sumlog_boot$candiesjudges),
+                 col = gray67,border = gray67, 
+                 main = " Random CandiesJudges effect", cex.main = 2.2)
+            lines(density(sumlog_boot$candiesjudges), col=darkblue,lwd=2)
+            points(sumlog["CandiesJudges"], 0, col="red", pch=19, lwd=6)
+            legend("topright", 
+                   legend = c(paste0("True GLRT: ",
+                                     round(sumlog["CandiesJudges"],2)), 
+                              "Kernel density"), 
+                   col = c("red", darkblue), lty=c(NA,1),pch=c(19,NA),
+                   inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+                   y.intersp = 0.8, lwd=c(4))
+# dev.off()      
+ 
+
+```
+
+
+## Compare the theorerical and true quantiles for fixed effect
+
+### Graph histo per PC
+```{r}
+# pdf(file = file.path(fig_path, "SDA_hist_perPC_Candies.pdf"), width = 14, height = 5)
+par(mar=c(4, 4, 4, 7.5), xpd=TRUE, mfrow=c(2,4))
+ratio_boot_Candies <- ratio_boot$Candies
+for (i in 1:dim(ratio_boot_Candies)[2]){
+  m=hist(ratio_boot_Candies[,i],  freq=F, breaks=100, 
+                 xlab=paste0("LLR"),
+                 col = gray67,border = gray67,
+                 main = paste0("LLR for Candies - PC ",i))
+            lines(density(ratio_boot_Candies[,i]), col=darkblue,lwd=3)
+            curve(dchisq(x, df=4), col='limegreen', 
+                   main = "Chi-Square Density Graph", 
+                  from=0,to=30, add=TRUE, lwd=3, xpd=F)
+            
+            # points(sumlog["CandiesJudges"], 0, col="red", pch=19, lwd=6)
+            legend("topright", 
+                    legend = c("Kernel density", "chi2 (df=4)"), 
+                    col = c(darkblue,  "limegreen"), lty=c(1,1),
+                    inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+                   y.intersp = 0.8, lwd=c(4))
+     
+}
+# dev.off()  
+
+```
+
+
+### Compare the quantiles by PC and for the GLLR
+
+```{r}
+# By PC
+df <- 4 
+theo_quant <- qchisq(seq(0, 0.9999, 1/nsim), df=df)
+# pdf(file = file.path(fig_path,
+#      paste0("SDA_RLLRqqplot_perPC_","Candies",".pdf")), 
+#       width = 12, height = 6)
+  par(mfrow=c(2,4))
+  for (i in 1:dim(ratio_boot_Candies)[2]){
+    boot_quant <- quantile(ratio_boot_Candies[,i],probs = seq(0, 0.9999, 1/nsim))
+    qTest <- quantile(ratio_boot_Candies[,i],probs = seq(0.0001,0.999, 1/nsim))
+    
+    qChi2 <- theo_quant
+    # boot_quant <- subset(boot_quant, !names(boot_quant) %in% c("0.00%", "99.95%","100.00%"))
+    plot(boot_quant, qChi2, 
+         xlim=range(boot_quant),
+         ylim=range(qChi2),
+         main = paste("LLR for Candies -", colnames(ratio_boot_Candies)[i]), xlab="Sample quantiles",
+         ylab="theoretical quantiles")
+    lines(c(0, min(max(boot_quant), max(qChi2))),
+          c(0, min(max(boot_quant), max(qChi2))),
+          col="red", lwd=1.5)
+  }
+  
+  # dev.off()
+
+# Globally
+df <- nPC*4 
+Theo_quant <- qchisq(seq(0, 0.9999, 1/nsim), df=df)
+boot_quant <- quantile(sumlog_boot$candies,probs = seq(0, 0.9999, 1/nsim))
+par(mfrow=c(1,1))
+# pdf(file = file.path(fig_path, "SDA_GLLRquantiles_Candies.pdf"), width = 6, height = 6)
+plot(boot_quant,Theo_quant, main = "True and theoretical GLLR for Candies effect", xlab = "Sample quantiles", ylab = "Theoretical quantiles", xlim = range(boot_quant, Theo_quant),
+     ylim=range(boot_quant, Theo_quant))
+lines(x=c(1:max(boot_quant, Theo_quant)), y=c(1:max(boot_quant, Theo_quant)), col="red")
+# dev.off()  
+```
+
+
+### p-value based on chi2 distribution
+
+```{r}
+pander("true GLLR:")
+sumlog["Candies"]
+curve(dchisq(x, df=4*nPC), col='red', main = "Chi-Square Density Graph",
+          from=0,to=60)
+pander("p-value")
+pchisq(sumlog["Candies"], df=4*nPC, lower.tail=FALSE)
+```
+
+
+## Compare the theorerical and true quantiles for random effects
+
+
+### Graph histo per PC
+```{r, out.width='100%'}
+# x11()
+# pdf(file = file.path(fig_path, "SDA_hist_perPC_Judges.pdf"), width = 16, height = 5)
+
+par(mar=c(4, 4, 4, 7.5), xpd=TRUE, mfrow=c(2,4))
+ratio_boot_Judges <- ratio_boot$Judges
+for (i in 1:dim(ratio_boot_Judges)[2]){
+
+x <- seq(0,round(max(ratio_boot_Judges[,i])),0.001)
+
+y <- 0.5*(dchisq(x, df=1) + dchisq(x, df=0))
+yy <- dchisq(x, df=1)
+
+  m=hist(ratio_boot_Judges[,i],  freq=F, breaks=100, 
+                 xlab=paste0("RLLR"),
+                 col = gray67,border = gray67,
+                 main = paste0("RLLR for Judges - PC ",i))
+ 
+ lines(density(ratio_boot_Judges[,i]), col=darkblue,lwd=3,ylim =c(0,7))
+ 
+ lines(x,y, type="l", col="red", lwd=1.5,ylim =c(0,7),xpd=F)
+ 
+ lines(x,yy, type="l", col="limegreen", lwd=1.5,ylim = c(0,7),xpd=F)
+ 
+  legend("topright",legend = c("Kernel density", 
+                               "mixture of chi2 (df=0,1)", 
+                               "chi2 (df=1)"), 
+     col = c(darkblue,  "limegreen", "red"), lty=c(1,1,1),
+     inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+     y.intersp = 0.8, lwd=c(4))
+     
+}
+
+# dev.off()  
+
+par(mfrow=c(1,1))
+
+# pdf(file = file.path(fig_path, "SDA_hist_perPC_CJ.pdf"), width = 16, height = 5)
+
+par(mar=c(4, 4, 4, 7.5), xpd=TRUE, mfrow=c(2,4))
+ratio_boot_CJ <- ratio_boot$CandiesJudges
+for (i in 1:dim(ratio_boot_CJ)[2]){
+
+x <- seq(0,round(max(ratio_boot_CJ[,i])),0.001)
+
+y <- 0.5*(dchisq(x, df=1) + dchisq(x, df=0))
+yy <- dchisq(x, df=1)
+
+  m=hist(ratio_boot_CJ[,i],  freq=F, breaks=100, 
+                 xlab=paste0("RLLR"),
+                 col = gray67,border = gray67,
+                 main = paste0("RLLR for CJ - PC ",i))
+ 
+ lines(density(ratio_boot_CJ[,i]), col=darkblue,lwd=3)
+ 
+ lines(x,y, type="l", col="red", lwd=1.5,xpd=F)
+ 
+ lines(x,yy, type="l", col="limegreen", lwd=1.5,xpd=F)
+  
+  legend("topright",legend = c("Kernel density", 
+                               "mixture of chi2 (df=0,1)", 
+                               "chi2 (df=1)"), 
+     col = c(darkblue,  "limegreen", "red"), lty=c(1,1,1),
+     inset=c(-0.2,0),box.lty=0, cex = 1.4, 
+     y.intersp = 0.8, lwd=c(4))
+     
+}
+# dev.off()  
+
+```
+
+
+### Compare the quantiles 
+
+#### Compute theo quant
+
+```{r}
+f <- function(x, P){
+  0.5*pchisq(x,0)+0.5*pchisq(x,1)-P
+}
+qchisq(0.1,0)
+
+vect <- c()
+for (i in seq(0.0001,0.999,by=1/nsim)){
+  # print(i)
+  interval <- c(min(qchisq(i,0),qchisq(i,1)), 
+                max(qchisq(i,0),qchisq(i,1)))
+  interval <- c(0,10)
+  vect <- c(vect, uniroot(f,interval, 
+                          tol = 0.0001, P = i)$root)
+}
+theo_quant <- vect
+plot(theo_quant)
+```
+
+### Compare the quantiles 
+```{r, eval=TRUE}
+### Per PC
+############
+# bootval <- ratio_boot[["Judges"]]
+# bootval <- ratio_boot[["Assessors"]]
+# bootval <- ratio_boot[["CandiesJudges"]]
+
+names(ratio_boot)
+
+for (j in 2:3){# random effects
+  # pdf(file = file.path(fig_path,
+  #    paste0("SDA_RLLRqqplot_perPC_",names(ratio_boot)[j],".pdf")), 
+  #     width = 12, height = 6)
+  
+  par(mfrow=c(2,4))
+  for (i in 1:dim(ratio_boot[[j]])[2]){
+    qTest <- quantile(ratio_boot[[j]][,i],probs = seq(0.0001,0.999, 1/nsim))
+    qChi2 <- theo_quant
+    qTest <- subset(qTest, !names(qTest) %in% c("0.00%", "99.95%","100.00%"))
+    plot(qTest, qChi2, 
+         xlim=range(qTest),
+         ylim=range(qChi2),
+         main = paste("RLLR for", names(ratio_boot)[j], "-", 
+                      colnames(ratio_boot[[j]])[i]), xlab="Sample quantiles",
+         ylab="theoretical quantiles")
+    lines(c(0, min(max(qTest), max(qChi2))),
+          c(0, min(max(qTest), max(qChi2))),
+          col="red", lwd=1.5)
+  }
+  
+  # dev.off()  
+}
+
+
+
+```
+

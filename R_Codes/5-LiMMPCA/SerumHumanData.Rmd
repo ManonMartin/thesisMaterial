@@ -1,0 +1,1653 @@
+---
+title: "LiMM-PCA with the Human Serum Data"
+author: "Manon Martin"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output:
+  html_document:
+    smart: FALSE
+    code_folding: hide
+    collapsed: yes
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 9
+    highlight: tango
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+
+data_path <- "../../Datasets/4_repeatability_reproducibility"
+
+
+fig_path <- "outputs"
+out_path <- "outputs"
+
+
+Vers <- "with45_"
+# Vers <- "without45_"
+
+if (Vers=="without45_"){
+  RemVol <- TRUE
+} else {RemVol <- FALSE}
+
+
+
+# Spectral vari- ations can be explained by three randoms factors
+# (volunteer, blood sam- pling for a given volunteer, blood tube for a
+#   given volunteer and a given sampling) and one fixed factor (time of
+#  measurement after defrozing).
+
+
+require(MBXUCL)
+require(lme4)
+require(plyr)
+require(pander)
+require(ggplot2)
+require(cowplot)
+require(reshape2)
+require(grid)
+library(gridExtra)
+library(stringr)
+require(ggpubr)
+library("tidyr") # for gather function
+
+
+knitr::opts_chunk$set(echo = TRUE, dev = c('png'), fig.ext=NULL)
+
+
+# Source code for LiMMPCA
+source("LIB/dimreducPCA.R")
+source("LIB/parlmer.R")
+
+# Colors +++++
+
+darkblue <- rgb(12,34,75, maxColorValue=255)
+lightblue <- rgb(216,216,216, maxColorValue=255)
+turquoise <- "mediumturquoise"
+violetred <- "mediumvioletred"
+gray67 <- "gray67"
+limegreen <-  "limegreen"
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+
+```
+
+
+# Data set up
+
+```{r}
+# serum human data base 5
+load(file.path(data_path, "HumanSerumData.RData"))
+
+n <- nrow(design)
+
+ppm <- colnames(outcomes)
+```
+
+
+## Article graph
+
+```{r}
+# pdf(file.path(fig_path, "HSD_outcomes.pdf"), width = 8, height = 5)
+col <- gg_color_hue(dim(outcomes)[1])
+plot(as.numeric(ppm), outcomes[1,], 
+     col=col[1], ylim=range(outcomes),ylab="Intensity",
+     main ="Human serum data base spectra", type="l",
+      xlab="ppm", xlim=rev(range(as.numeric(ppm))))
+for (i in 2:dim(outcomes)[1]){
+  lines(as.numeric(ppm), outcomes[i,], col=col[i])
+}
+# dev.off()
+```
+
+
+## Remove volunteers?
+```{r, eval = TRUE} 
+if (RemVol) {
+  outcomes <- outcomes[which(!design$Volunteer %in% 
+                               c("05", "04")),]
+  design <- design[which(!design$Volunteer%in% c("05", "04")),]
+  design$Volunteer
+  design$Volunteer <- droplevels(design$Volunteer)
+}
+
+```
+
+
+
+## Data dimensions and frequencies
+```{r} 
+pander("dim(design)")
+pander(paste(dim(design),collapse = " x "))
+
+pander("dim(outcomes)")
+pander(paste(dim(outcomes),collapse = " x "))
+
+
+pander("table(design$Tube, design$Sampling, design$Time)")
+pander(table(design$Tube, design$Sampling, design$Time))
+
+spectmat <- outcomes
+
+Volunteer  <- design$Volunteer
+Sampling <- design$Sampling
+Tube <- design$Tube
+Time <- design$Time
+
+```
+
+## Hotelling T^2
+
+```{r}
+require(mdatools)
+
+model = pca(spectmat, scale = FALSE, cv = 10, 
+            info = 'Simple PCA model', lim.type = "jm")
+
+ncomp <- 4
+# model$ncomp.selected
+
+# plotVariance(model)
+# plotResiduals(model, show.labels = TRUE, ncomp = ncomp, main = "Squared residual distance vs Hotelling T2 distance", norm = TRUE)
+# 
+# plotResiduals(model, show.labels = TRUE, ncomp = ncomp, 
+#               main = "Squared residual distance vs Hotelling T2 distance")
+
+
+Qlim <- model$Qlim
+T2lim <- model$T2lim
+rownames(Qlim)[2] <- rownames(T2lim)[2] <- "Out_limit"
+
+
+# In case of PCA the critical limits are just shown 
+# on residual plot as lines and can be used for detection 
+# of extreme objects (solid line) and outliers (dashed line).
+
+plot_hotelling <- function(){
+  xlim <- range(model$calres$T2[,ncomp])
+  xlim[1] <- xlim[1]*0.9
+  xlim[2] <- xlim[2]*1.1
+  ylim <- range(model$calres$Q[,ncomp])
+  ylim[1] <- ylim[1]*0.9
+  ylim[2] <- ylim[2]*1.1
+  plot(model$calres$T2[,ncomp], model$calres$Q[,ncomp], 
+     main = "Diagnostic plot for score and residual outliers", xlab = "Hotelling T2 distance", 
+     ylab ="Squared residual distance", pch = 16, xlim = xlim, ylim = ylim)
+  abline(h=Qlim["Out_limit",ncomp], v=T2lim["Out_limit",ncomp], lty =3)
+  legend("topright", legend = "Outlier limit", lty = 3)
+  index1 <- which(model$calres$T2[,ncomp]>=T2lim["Out_limit",ncomp])
+  index2 <- which(model$calres$Q[,ncomp]>=Qlim["Out_limit",ncomp])
+  index_ho <- unique(c(index1,index2))
+  text(x = model$calres$T2[index_ho,ncomp], y=model$calres$Q[index_ho,ncomp], 
+       labels = names(model$calres$T2[index_ho,ncomp]), pos = c(1,2,3,4))
+}
+
+plot_hotelling()
+
+# pdf(file.path(fig_path,"HSD_hotelling.pdf"), height = 6, width = 6)
+plot_hotelling()
+# dev.off()
+```
+
+
+
+
+# Dimension reduction by PCA
+```{r, out.width='50%', fig.show='hold'}
+###################################################
+# Dimension reduction by PCA
+###################################################
+
+# ===== PCA ===== #
+
+res_pca <- SVDforPCA(x = spectmat)
+
+### screePlot
+df <- data.frame(PC =as.character(1:length(res_pca$var)),
+                 var = res_pca$var)
+df <- df[c(1:9),]
+screePlot <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+          labs(title= "PCA scree plot",
+                        x = "PC", y="% var")+theme_classic()
+
+
+
+### score plot
+score1 <- DrawScores(res_pca, axes=c(1,2),drawNames = FALSE, 
+           main  = "PCA scores plot", pch = design$Time,
+           color= design$Volunteer)+
+  coord_cartesian(xlim = c(-30, 55), ylim = c(-15, 17))
+
+
+
+col <- gg_color_hue(2)
+score2 <- DrawScores(res_pca, axes=c(1,2),drawNames = FALSE, 
+           main  = "PCA scores plot", 
+           pch = Volunteer,
+            size = 3, 
+           legend_color_manual = c("1"=col[1], "2"=col[2])) +
+  coord_cartesian(xlim = c(-51, 51), ylim = c(-18, 18))
+
+
+
+# pdf(file.path(fig_path,"ScoresSpectmat.pdf"), height = 3.2, width = 9.4)
+
+# plot_grid(score1,score2, align = "none", nrow = 1)
+
+# dev.off()
+
+score1
+score2
+
+DrawScores(res_pca, color = design$Sampling, 
+           axes=c(1,2), drawNames = TRUE)
+DrawScores(res_pca, color = design$Sampling, 
+           axes=c(3,4), drawNames = TRUE)
+DrawScores(res_pca, color = design$Volunteer, 
+           axes=c(1,2), drawNames = FALSE)
+DrawScores(res_pca, color = design$Volunteer, 
+           axes=c(3,4), drawNames = FALSE)
+DrawScores(res_pca, color = design$Tube, axes=c(1,2), drawNames = FALSE)
+DrawScores(res_pca, color = design$Tube, axes=c(3,4), drawNames = FALSE)
+DrawScores(res_pca, color = design$Time, axes=c(1,2), drawNames = FALSE)
+DrawScores(res_pca, color = design$Time, axes=c(3,4), drawNames = FALSE)
+
+
+pander("pc var explained")
+pander(round(res_pca$var[1:8],2))
+
+```
+
+## Article journal graph
+```{r, fig.height=3}
+loadPlot <- DrawLoadings(res_pca, type.obj = "PCA", 
+                         main = "PCA loadings plots",
+             axes = c(1, 2), loadingstype = "s",ylab = c(""),
+             xaxis_type="numeric", xlab = "ppm")[[1]]
+
+PCA_plots <- ggarrange(screePlot, score2, loadPlot,
+                ncol = 3, nrow = 1,
+                widths  = c(0.3, 1,  0.85))
+
+PCA_plots
+
+# ggexport(PCA_plots, 
+#          filename = file.path(fig_path,paste0(Vers,
+#            "HSD_PCA_outcomes.pdf")),
+#          height = 5, width = 14)
+
+```
+
+
+
+
+## Apply first step of LiMMPCA (PCA)
+
+```{r}
+
+# apply first step of LiMMPCA with dimreducPCA()
+res_pca2 <- dimreducPCA(data = outcomes, pcvar = 99)
+
+
+spectra_PCA_scores <- res_pca2$pca_scores
+spectra_PCA_loadings <- res_pca2$pca_loadings
+
+
+Xtest <- spectra_PCA_scores%*%t(spectra_PCA_loadings)
+
+m <- nPC <- dim(spectra_PCA_scores)[2]
+```
+
+
+
+# Parallel mixed modelling
+
+```{r, cache=FALSE, fig.height=4}
+###################################################
+# Parallel mixed modelling
+###################################################
+
+### define the input arguments for the parallel mixed modelling
+
+# formula
+form <- "~ Time + Tube + (1|Volunteer) + (1|Volunteer:Sampling) "
+
+# multivariate response matrix
+outcomes <- spectra_PCA_scores
+
+# REML
+REML <- TRUE
+
+### run parlmer
+res.parlmer <- parlmer(design, outcomes, form, REML)
+MM_full <- res.parlmer
+
+
+# save the results
+RanModMatlist <- res.parlmer$RanModMatlist
+FixedModMatlist <- res.parlmer$FixedModMatlist
+
+# Residuals sd error
+Res_std_error_PC <- sapply(MM_full$merMod_obj, sigma)
+
+# Residuals
+Residuals_PC <- sapply(MM_full$merMod_obj, residuals)
+
+
+### ranef_PC: Extract the modes of the random effects
+ranef_PC <- sapply(MM_full$merMod_obj, function(x) unlist(ranef(x)))
+
+
+# recover accurate rownames and colnames of ranef_PC
+list_rownam <- lapply(ranef(MM_full$merMod_obj[[1]]), rownames)
+
+colnam <- paste0(names(ranef(MM_full$merMod_obj[[1]])), lapply(ranef(MM_full$merMod_obj[[1]]), rownames))
+
+ranef_PC <- sapply(MM_full$merMod_obj, function(x) unlist(ranef(x)))
+names(list_rownam) <- gsub("[^A-z]", "", names(list_rownam))
+
+colnam <- c()
+for (i in 1:length(list_rownam)){
+  colnam <- c(colnam, paste0(names(list_rownam)[i], list_rownam[[i]]))
+}
+rownames(ranef_PC) <- colnam
+rownames(ranef_PC) <- gsub("..(Intercept))", "", rownames(ranef_PC))
+
+
+### fixef: Extract fixed-effects estimates
+fixef_PC <- sapply(MM_full$merMod_obj, fixef)
+
+
+### all fixed estimates and random predictions
+cof_PC <- rbind(fixef_PC, ranef_PC)
+
+### Extract Variance and Correlation Components
+varcor_random_full <- sapply(MM_full$merMod_obj, VarCorr) # var
+
+dat <- as.numeric(rbind(varcor_random_full))
+varcor_random_full_mat <- matrix(dat, nrow=dim(varcor_random_full)[1],
+                                 dimnames = dimnames(varcor_random_full))
+
+
+fixNames <- MM_full$fixNames # names of fixed effects
+
+ranNames <- MM_full$ranNames # names of random effects
+
+# estimated Std.Dev. of fixed effects parameters
+varcor_fixed_full <- sapply(MM_full$merMod_obj, 
+                            function(x) sqrt(diag(vcov(x)))) # Std.Dev.
+
+
+rownames(varcor_fixed_full) <- rownames(vcov(MM_full$merMod_obj[[1]]))
+```
+
+
+
+
+# Effect matrix computation
+
+```{r} 
+###################################################
+# Effect matrix computation
+###################################################
+
+# fixed effects + intercept -----------------------------
+dim1FixedModMad <- sapply(FixedModMatlist, function(x) dim(x)[2])
+names_FixedEffects <- names(FixedModMatlist)
+
+shortFixedNames <- names_FixedEffects
+Xmat <- do.call(cbind, FixedModMatlist)
+
+# colnames(Xmat) %in% rownames(fixef_PC)
+Xmat <- Xmat[,rownames(fixef_PC)] # reorder colnames of Xmat
+
+index <- cumsum(dim1FixedModMad)
+k <- 1
+Mfix <- vector("list", length=length(shortFixedNames))
+Mfix_PC <- vector("list", length=length(shortFixedNames))
+names(Mfix) <- names(Mfix_PC) <-  shortFixedNames
+for (i in 1:length(shortFixedNames)){
+  XMfix = Xmat
+  XMfix[,-c(k:index[i])] = 0
+  Mfix_PC[[i]] = XMfix %*% fixef_PC
+  Mfix[[i]] <- Mfix_PC[[i]]%*%t(spectra_PCA_loadings)
+  k <-  index[i] + 1
+}
+
+M0 <- Mfix$Intercept
+
+Mfix <- Mfix[-which(names(Mfix)=="(Intercept)")]
+Mfix_PC <- Mfix_PC[-which(names(Mfix_PC)=="(Intercept)")]
+
+
+# random effects -----------------------------
+dim1RandModMad <- sapply(RanModMatlist, function(x) dim(x)[2])
+names_randomEffects <- names(RanModMatlist)
+
+shortRandNames <- gsub("[^A-z]", "", names_randomEffects)
+
+Zmat <- do.call(cbind, RanModMatlist)
+colnames(Zmat) <- paste0(rep(shortRandNames,
+                             dim1RandModMad),
+                         colnames(Zmat))
+
+# colnames(Zmat) %in% rownames(ranef_PC)
+
+Zmat <- Zmat[,rownames(ranef_PC)] # reorder colnames of Zmat
+
+index <- cumsum(dim1RandModMad)
+k <- 1
+Mrand_PC <- vector("list", length=length(ranNames))
+Mrand <- vector("list", length=length(ranNames))
+names(Mrand) <- names(Mrand_PC) <- ranNames
+for (i in 1:length(shortRandNames)){
+  XMrand = Zmat
+  XMrand[,-c(k:index[i])] = 0
+  Mrand_PC[[i]] = XMrand %*% ranef_PC
+  Mrand[[i]] <- Mrand_PC[[i]]%*%t(spectra_PCA_loadings)
+  k <-  index[i] + 1
+}
+
+Mres_PC <- Residuals_PC
+Mres <- Mres_PC%*%t(spectra_PCA_loadings)
+
+```
+
+
+
+# PCA on the effect matrices
+
+## PCA on the pure effect matrices
+```{r, out.width = "50%"}
+###################################################
+## PCA on the effect matrices
+###################################################
+
+## Fixed effects -------------------------------
+loadingsFix <- vector(mode = "list", length = length(Mfix))
+for (i in 1:length(Mfix)){
+  print(names(Mfix[i]))
+  dimnames(Mfix[[i]]) <- dimnames(spectmat)
+  res_pca <- SVDforPCA(Mfix[[i]])
+  res_pca$scores <- round(res_pca$scores, 6)
+  print(DrawScores(res_pca, size=3,
+                         main = paste("Scores plot",
+                                      names(Mfix[i])),
+                   axes=c(1,2), drawNames=FALSE))
+
+  barplot(res_pca$var[1:10], main  = "scree plot")
+
+  plot(res_pca$loadings[,1], type="l", 
+       main = paste("Loadings plot",names(Mfix[i])))
+    
+}
+
+# Time
+#####################
+res_pca <- SVDforPCA(Mfix$Time)
+
+df <- data.frame(PC = as.character(1:7),var = res_pca$var[1:7])
+screeplotTime <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+                   labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+           
+# screeplotTime
+
+loadTime <- DrawLoadings(res_pca, type.obj = "PCA",createWindow = F,
+          main = paste("Loadings plot"), 
+          xaxis_type = "numeric",
+                       axes = c(1), loadingstype = "s", num.stacked = 2,
+                       xlab = "ppm", ylab = "", ang = "0",
+                       nxaxis = 10)[[1]]
+
+
+# Tube
+#####################
+
+res_pca <- SVDforPCA(Mfix$Tube)
+
+df <- data.frame(PC = as.character(1:7),var = res_pca$var[1:7])
+screeplotTube <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+                   labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+           
+# screeplotTube
+
+loadTube <- DrawLoadings(res_pca, type.obj = "PCA",createWindow = F,
+          main = paste("Loadings plot"), 
+          xaxis_type = "numeric",
+                       axes = c(1), loadingstype = "s", num.stacked = 2,
+                       xlab = "ppm", ylab = "", ang = "0",
+                       nxaxis = 10)[[1]]
+
+
+## Random effects -------------------------------
+loadingsRand <- vector(mode = "list", length = length(Mrand))
+for (i in 1:length(Mrand)){
+  print(names(Mrand[i]))
+  dimnames(Mrand[[i]]) <- dimnames(spectmat)
+  res_pca <- SVDforPCA(Mrand[[i]])
+  res_pca$scores <- round(res_pca$scores, 6)
+  print(DrawScores(res_pca, size=3, color = design[,names(Mrand[i])],
+                         main = paste("Scores plot",names(Mrand[i])),
+                   axes=c(1,2), drawNames=FALSE))
+
+  print(DrawScores(res_pca, size=3, color = design[,names(Mrand[i])],
+             main = paste("Scores plot",names(Mrand[i])), 
+             axes=c(3,4), drawNames=FALSE))
+
+  barplot(res_pca$var[1:10], main  = "scree plot")
+
+  plot(res_pca$loadings[,1], type="l", 
+       main = paste("Loadings plot",names(Mrand[i])))
+  plot(res_pca$loadings[,2], type="l", 
+       main = paste("Loadings plot",names(Mrand[i])))
+ 
+  load <- DrawLoadings(res_pca, axes=c(1,2), type.obj = "PCA", 
+             loadingstype = "s",  xlab = "ppm",
+             xaxis_type = "character",
+             main = paste("Loadings plot:",
+                          names(Mrand[i]), 
+                          "effet matrix"))
+  
+  load
+  loadingsRand[[i]] <-  load
+}
+
+
+
+# Sampling
+#####################
+res_pca <- SVDforPCA(Mrand$Sampling)
+
+df <- data.frame(PC = as.character(1:7),var = res_pca$var[1:7])
+screeplotSampling <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+                   labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+           
+# screeplotSampling
+
+loadSampling <- DrawLoadings(res_pca, type.obj = "PCA",
+                             createWindow = F,
+          main = paste("Loadings plot"), 
+          xaxis_type = "numeric",
+          axes = c(1,2), loadingstype = "s", num.stacked = 3,
+          xlab = "ppm", ang = "0",ylab = "",
+          nxaxis = 10)
+
+# Volunteer
+#####################
+res_pca <- SVDforPCA(Mrand$Volunteer)
+
+df <- data.frame(PC = as.character(1:7),var = res_pca$var[1:7])
+screeplotVolunteer <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+                   labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+           
+# screeplotVolunteer
+
+loadVolunteer <- DrawLoadings(res_pca, type.obj = "PCA",
+                              createWindow = F,
+          main = paste("Loadings plot"), 
+          xaxis_type = "numeric",
+          axes = c(1,2), loadingstype = "s", 
+          num.stacked = 3,
+          xlab = "ppm", ang = "0",ylab = "",
+          nxaxis = 10)
+
+
+# Residuals
+#####################
+res_pca_Mres <- SVDforPCA(Mres)
+res_pca_Mres$scores <- round(res_pca_Mres$scores, 6)
+
+pander("scores and loadings of the residuals")
+
+DrawLoadings(res_pca_Mres, axes = 1, xaxis_type = "character",main = "Loadings plot for the Residuals effect matrix")
+
+# pdf(file.path(out_path, "scores-Mres.pdf"))
+DrawScores(res_pca_Mres, main = "Scores plot for the Residuals effect matrix")
+# dev.off()
+```
+
+
+
+
+## PCA on the augmented effect matrices
+
+### addSegments function
+```{r,out.width = "50%"}
+
+addSegments <- function(group, data, pch=16, main = NULL, 
+                        col = rainbow(n = length(unique(group))), ...) {
+  
+  group <- as.factor(group)
+  
+  plot(data$x, data$y, col=col[group], pch=pch, main=main, ...)
+  
+  group <- as.factor(group)
+  xcent <- tapply(data[,1], group, FUN=mean)
+  ycent <- tapply(data[,2], group, FUN=mean)
+  centers <- data.frame(xcent=xcent, ycent=ycent)
+
+  mapply(FUN = points, x = centers$xcent, 
+         y = centers$ycent, col = col, 
+         MoreArgs = list(pch=20, cex=0.7))
+
+  submatrices <- split(x=data, f=group)
+  for (i in 1:nlevels(group)){
+    mapply(FUN = segments, x1 = submatrices[[i]]$x, 
+           y1 = submatrices[[i]]$y, col = col[i],
+         MoreArgs = list(x0 = centers$xcent[i], 
+                         y0 = centers$ycent[i]))
+  }
+  
+}
+
+```
+
+
+### ASCA-E
+
+* Tube: Mu + E
+* Time: Mt + E
+* Volunteer: Mv + Ms
+* Sampling: Ms + E
+
+```{r}
+# correction factors ++++++
+a <- nlevels(design$Tube)
+b <- nlevels(design$Time)
+c <- nlevels(design$Volunteer)
+d <- nlevels(design$Sampling)
+```
+
+
+```{r}
+#################################
+###  Augmented time effect
+#################################
+
+pander("Augmented Time effect")
+res_pca <- SVDforPCA(Mfix$Time)
+df1 <- (b-1)
+df2 <- (a*b*c*d-a-b-c*d+2)
+Fstat <- qf(.95, df1=df1, df2=df2) 
+coef <- sqrt(Fstat*df1/df2)
+
+res_pca$scores[,1:2] <- (Mfix$Time + Mres*coef)%*%res_pca$loadings[,1:2]
+
+col <- c("1"=violetred, "2" = darkblue)
+pch <- c("1"= 2, "2"= 4)
+index <- c(84, 85, 23, 87, 88)
+
+df <- as.data.frame(res_pca$scores)
+
+Time_scores <- ggplot(aes(y=PC1, x= 1:nrow(df), color=Time, shape = Tube),data=df)+
+  geom_point() +
+  ggtitle(label = "PCA Score on augmented Time effect matrix")+
+  xlab("Observation number")+  ylim(low=-2.1, high=2.1) +
+  geom_hline(yintercept=0, linetype=2, color="gray", size=0.7)+
+  theme(plot.title = element_text(face="plain"),axis.text.x = element_text(size=10)) +
+   annotate("text", y = res_pca$scores[index,1]+ 0.1*c(1,1,1,1,1), 
+         x = index, label = rownames(res_pca$scores)[index])
+Time_scores
+
+#################################
+###  Augmented tube effect
+#################################
+
+pander("Augmented Tube effect")
+res_pca <- SVDforPCA(Mfix$Tube)
+df1 <- (a-1)
+df2 <- (a*b*c*d-a-b-c*d+2)
+Fstat <- qf(.95, df1=df1, df2=df2) 
+coef <- sqrt(Fstat*df1/df2)
+
+res_pca$scores[,1:2] <- (Mfix$Tube + Mres*coef)%*%res_pca$loadings[,1:2]
+
+col <- c("1"=violetred, "2" = darkblue)
+pch <- c("1"= 2, "2"= 4)
+
+index <- c(85, 80,79, 78,84,81,22,19,88,18, 87,21)
+
+df <- as.data.frame(res_pca$scores)
+
+Tube_scores <- ggplot(aes(y=PC1, x= 1:nrow(df), 
+                          color=Tube, shape = Time),
+                      data=df) +
+  geom_point() +
+  ggtitle(label = "PCA Score on augmented Tube effect matrix")+
+  xlab("Observation number")+
+  geom_hline(yintercept=0, linetype=2, color="gray", size=0.7)+
+  theme(plot.title = element_text(face="plain"),
+        axis.text.x = element_text(size=10))+
+   annotate("text", 
+            y = res_pca$scores[index,1]+ 0.2*
+              c(1,1,1,-1,1,-1, 1,1,-1,-1,1,1), 
+         x = index, label = rownames(res_pca$scores)[index])
+
+Tube_scores
+
+
+#################################
+### Augmented Volunteer effect
+#################################
+
+pander("Augmented Volunteer effect")
+
+res_pca <- SVDforPCA(Mrand$Volunteer)
+df1 <- (c-1)
+df2 <- (c*d-c)
+Fstat <- qf(.95, df1=df1, df2=df2) 
+coef <- sqrt(Fstat*df1/df2)
+
+res_pca$scores[,1:2] <- (Mrand$Volunteer+Mrand$Sampling*coef)%*%
+  res_pca$loadings[,1:2]
+
+
+res_pca$scores <- round(res_pca$scores, 6)
+Volunteer_scores <- DrawScores(res_pca, 
+               main = "PCA Scores on augmented effect matrix", 
+           color = Volunteer, pch=Volunteer, 
+           drawNames = FALSE, drawPolygon  = TRUE, 
+           noLegend = FALSE, size=2)+
+        coord_cartesian(xlim = c(-50, 50), 
+                        ylim = c(-17, 17))+  
+  theme(legend.text=element_text(size=10),
+        plot.title = element_text(face="plain"),
+                    legend.key.height=unit(0.55,"line"))
+
+Volunteer_scores
+
+#################################
+### Augmented Sampling effect
+#################################
+pander("Augmented Sampling effect")
+
+res_pca <- SVDforPCA(Mrand$Sampling)
+df1 <- (c-1)
+df2 <- (a*b*c*d-a-b-c*d+2)
+Fstat <- qf(.95, df1=df1, df2=df2) 
+coef <- sqrt(Fstat*df1/df2)
+
+res_pca$scores[,1:2] <- (Mrand$Sampling +
+                           Mres*coef)%*%res_pca$loadings[,1:2]
+
+res_pca$scores <- round(res_pca$scores, 6)
+
+pch <- c("1"= 1, "2"= 17, "3"=8)
+
+col <- c(darkblue, "dodgerblue", turquoise, violetred, 
+         limegreen,"orangered", "forestgreen", "gold", 
+         "goldenrod4", "orange1", "maroon1",
+         "red3")
+
+VolSamp <- as.factor(paste0(Volunteer, Sampling))
+Vol <- as.factor(substr(VolSamp,1,2))
+pch <- c("1"= 2, "2"= 8)
+names(col) <- levels(Volunteer)
+
+xlab <- paste0("PC", 1, " (", round(res_pca$var[1], 2),"%)")
+ylab <- paste0("PC", 2, " (", round(res_pca$var[2], 2), "%)")
+    
+df <- as.data.frame(res_pca$scores[,1:2])
+Sampling_scores <- ggplot(df, aes(PC1, PC2, group = VolSamp, 
+               shape = Sampling)) +   
+  geom_point(size = 2, aes(colour = Volunteer)) +
+  geom_line(aes(colour = Volunteer)) +
+  scale_shape_manual(name = "Sampling", values=c(8, 0,17),
+                           guide=guide_legend(order=1, shape = 1)) + 
+  coord_cartesian(xlim = c(-26, 26), ylim = c(-12, 12))   + 
+  ggplot2::labs(title = "PCA Scores on augmented effect matrix", 
+                x = xlab, y = ylab) +
+  ggplot2::geom_vline(xintercept = 0, size = 0.1) + 
+  ggplot2::geom_hline(yintercept = 0, size = 0.1) + 
+  ggplot2::theme_bw() +
+      ggplot2::theme(panel.grid.major = 
+                       ggplot2::element_line(color = "gray60",
+                       size = 0.2), 
+                     panel.grid.minor = ggplot2::element_blank(),
+                     panel.background = 
+                       ggplot2::element_rect(fill = "gray98")) +   theme(legend.text=element_text(size=7),
+                    legend.key.height=unit(0.55,"line"))
+
+
+Sampling_scores
+
+```
+
+
+### Thesis chapter output
+
+```{r, fig.height=3}
+a <- grid.arrange(screeplotTime, Time_scores,
+                 loadTime, nrow=1,widths=c(0.3, 1,  1),
+             top=textGrob("Time effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+b <-  grid.arrange(screeplotTube,
+                  Tube_scores,loadTube, 
+                  nrow=1,widths=c(0.3, 1,  1),
+             top=textGrob("Tube effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+d <- grid.arrange(screeplotVolunteer,
+            Volunteer_scores, loadVolunteer[[1]],
+              nrow=1,widths=c(0.3, 1,  1),
+             top=textGrob("Volunteer effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+c <- grid.arrange(screeplotSampling,
+               Sampling_scores,loadSampling[[1]],
+              nrow=1,widths=c(0.3, 1,  1),
+             top=textGrob("Sampling effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+# Thesis chapter output
+# pdf(file.path(fig_path,paste0(Vers,
+#            "HSD_Scores_Loadings_EffectMat.pdf")),
+#          height = 20, width = 14)
+# ggarrange(a,b,c,d, nrow=5, labels = c("A", "B", "C", "D"))
+# dev.off()
+
+
+
+```
+
+### Residuals
+
+```{r, eval=TRUE}
+res_pca <- SVDforPCA(Mres)
+
+df <- data.frame(PC = as.character(1:length(res_pca$var)),
+                 var = res_pca$var)
+
+df <- df[1:7,]
+
+screeplot_resid <- ggplot(df, aes(y=0,yend=var,x=PC,
+                          xend=PC))+ geom_segment()+
+          labs(title= "Scree plot",
+                        x = "PC", y="% var")+theme_classic()
+
+index <- c(85,  84, 80, 81, 79, 78, c(18,19, 23,  22))
+
+scores_resid <- DrawScores(res_pca, drawNames = FALSE, 
+            color = Volunteer, 
+           pch = Volunteer, main ="PCA scores", 
+           size = 3) + 
+  annotate("text", y = (res_pca$scores[index,2]+0.3 +
+                                0.4*c( 1 , 1, 1, 1,-1,1,1,1,1,1)),
+                         x = res_pca$scores[index,1]+0.3,
+                         label = rownames(res_pca$scores[index,1:2]))+ 
+   theme(legend.text=element_text(size=10),
+         legend.key.height=unit(0.7,"line")) 
+
+
+scores_resid <- scores_resid + coord_cartesian(xlim = c(-9, 9), 
+                                               ylim = c(-9, 9))
+
+loadings_resid <- DrawLoadings(res_pca, type.obj = "PCA",
+                               createWindow = F,
+          main = paste("PCA loadings"), 
+          xaxis_type = "numeric",
+           axes = c(1,2), loadingstype = "s", 
+          num.stacked = 2,
+           xlab = "ppm", ylab = "", ang = "0",
+           nxaxis = 10)[[1]]
+
+
+
+# pdf(file.path(fig_path,
+# paste0(Vers,"HSD_Scores_Loadings_Residuals.pdf")),
+# height = 4, width = 11)
+
+grid.arrange(scores_resid, loadings_resid,nrow=1,
+             widths=c(0.8, 1))
+# dev.off()
+
+```
+
+### Journal article output
+```{r, fig.heigth = 20}
+e <- grid.arrange(screeplot_resid, 
+              scores_resid, loadings_resid,
+              nrow=1,widths  = c(0.3, 1,  1),
+             top=textGrob("Residual effect matrix",
+                          gp=gpar(fontsize=20,font=2)))
+
+# journal article output
+# pdf(file.path(fig_path,paste0(Vers,
+#            "HSD_Scores_Loadings_EffectMat.pdf")),
+#          height = 25, width = 14)
+ggarrange(a,b,c,d,e , nrow=5, labels = c("A", "B", "C", "D", "E"))
+# dev.off()
+```
+
+
+# Pourcentage de variance expliquée
+
+## Method from Nakagawa and Schielzeth (2012)
+
+```{r, out.width = "80%"}
+####################################################
+# Pourcentage de variance expliquée
+####################################################
+
+# Random effects -----------------------------------
+sigma2_res = Res_std_error_PC^2 # Residual
+varcor_random_full <- as.data.frame(varcor_random_full)
+Var_Mrand <- rbind(varcor_random_full, 
+                   sigma2_res=sigma2_res) # only random effects
+Var_Mrand <- data.matrix(Var_Mrand)
+
+
+
+# fixed effect -----------------------------------
+Var_Mfix <- c()
+for (i in 1:length(fixNames)){
+  #  variance of parameters values (population)
+  Var_Mfix <- rbind(Var_Mfix, 
+                    (apply(Mfix_PC[[i]], 2, var) *(n - 1) / n))
+}
+rownames(Var_Mfix) <- fixNames
+
+rownames(Var_Mrand) <- c(ranNames, "Residuals")
+
+Var_Mrand <- rbind(Volunteer=Var_Mrand["Volunteer",],
+                   Sampling=Var_Mrand["Sampling",], 
+                   Residuals=Var_Mrand["Residuals",])
+
+
+# All var comp (fixed and random) +++++
+var_comp <- rbind(Var_Mfix, Var_Mrand)
+
+
+# log of var comp +++++
+log_var_comp <- t(log1p(var_comp)) # log(x+1)
+log_var_comp <- cbind(id=1:dim(log_var_comp)[1],
+                      log_var_comp)
+log_var_comp <- as.data.frame(log_var_comp)
+log_var_comp$id <- str_pad(1:dim(log_var_comp)[1], 2, pad = "0")
+log_var_comp <- melt(log_var_comp, id=c("id"))
+log_var_comp$value <- as.numeric(log_var_comp$value)
+
+names(log_var_comp) <- c("PC", "Effect", "Variance")
+  
+
+sum_var_comp <- rowSums(var_comp)
+
+# Percent var expl by each effect -----
+var_comp_m1_abs <- sum_var_comp
+var_comp_m1 <- var_comp_m1_abs*100/sum(var_comp_m1_abs)
+names(var_comp_m1) <- names(var_comp_m1_abs)
+
+
+# pdf(file.path(out_path,"variance_components.pdf"), 
+#     height = 3, width = 3, pointsize = 12)
+
+xlim <- c(0, ceiling(max(var_comp_m1)/10) * 10)
+par(mar=c(0.5,2,3,0.5)) 
+barplot(var_comp_m1, 
+        main="Variance components \n percentage",
+        xaxt="n",las=2, col=c(darkblue, turquoise,violetred ,
+                              limegreen, gray67), border = NA,
+        legend = names(var_comp_m1), 
+        args.legend = list(x="topleft", inset=c(0,0),
+                           box.lty=0,cex = 0.7,
+                           y.intersp = 0.8))
+# dev.off()
+
+table_var <- rbind(var_comp_m1_abs, var_comp_m1)
+rownames(table_var) <- c("Sum variance for all responses", 
+                         "percentage of variation")
+colnames(table_var) <- rownames(var_comp)
+pander(table_var)
+
+```
+
+
+## Chapter graph
+
+```{r}
+library("RColorBrewer")
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+p <- ggplot(log_var_comp, aes(Effect, Variance, group = PC))+
+  ggtitle("HSD - Log of variance components")+
+  scale_color_manual(values = setNames(gg_color_hue(nPC),
+                                       levels(log_var_comp$PC)))
+
+p <- p + geom_point(aes(colour = PC))+
+  geom_line(aes(colour = PC,linetype=PC),size=0.5)+ 
+  ylab(label = "log(variance)") +
+  theme(legend.text=element_text(size=10),
+        legend.key.height=unit(0.7,"line"))+
+   scale_linetype_manual(values = 1:nPC)
+
+names(var_comp_m1)[5] <- "Residuals"
+
+p
+
+# Thesis chapter output
+
+# ggexport(p, filename = file.path(fig_path,paste0(Vers,"HSD_variance_components.pdf")),
+#          height = 5, width = 6.5, pointsize=14)
+
+```
+
+
+## Article journal graph
+
+```{r}
+# journal article output
+tab <- data.frame(Effect= names(var_comp_m1), 
+                  pcvar = round(var_comp_m1,2))
+
+var_comp_m1.table <- ggtexttable(tab,
+                    cols = c("Effect", "Global var (%)"),
+                    rows = NULL, theme = ttheme("classic",
+                                                base_size = 10))
+
+p <- p + annotation_custom(ggplotGrob(var_comp_m1.table),
+                              xmin = 3.1, ymin = 3,
+                              xmax = 0)
+p
+
+# ggexport(p, filename = file.path(fig_path,paste0(Vers,"HSD_variance_components.pdf")),
+#          height = 5, width = 6.5, pointsize=16)
+
+```
+
+
+## Method from Rejane's thesis
+(Rousseau 2011, ISBA, UCL)
+
+```{r, eval=TRUE, out.width='50%'} 
+ 
+fix_var <- (1/2)*2*(fixef_PC[2,]^2)
+
+var_comp <- rbind(fix_var, Var_Mrand)
+
+
+sum_var_comp <- apply(var_comp, 1, sum)
+pander( "sum of the variance components over the responses")
+pander(sum_var_comp)
+
+var_comp_m3 <- sum_var_comp
+var_comp_m3 <- var_comp_m3*100/sum(var_comp_m3)
+names(var_comp_m3) <- rownames(var_comp)
+
+# var_comp_m3 <- var_comp_m3*100/sum(var_comp_m3)
+# names(var_comp_m3) <- rownames(var_comp)
+# barplot(var_comp_m3)
+# pander(var_comp_m3)
+
+```
+
+
+# Bootstrap
+
+
+```{r} 
+# set up of the bootstrap
+set.seed(2017)
+nsim = 2000 # number of simulations
+
+# name of the output 
+name <- paste0("bootstrap_HumanSerumData_VSTT_TubeFix.RData")
+
+# Set up -------------------
+# formulas without the effet to test
+null_formulas <- list( 
+  Volunteer = "~ Time + Tube + (1|Sampling) ",
+  Sampling = "~ Time + Tube +  (1|Volunteer)  ",
+  Tube = "~ Time + (1|Volunteer) + (1|Volunteer:Sampling)",
+  Time = "~  Tube + (1|Volunteer) + (1|Volunteer:Sampling)")
+
+null_effects <- names(null_formulas)
+
+REML <- c(TRUE, TRUE, FALSE, FALSE) # for each null formula
+names(REML) <- names(null_formulas)
+
+```
+
+
+
+## Likelihood Ratio calcul 
+```{r, eval=TRUE, out.width='50%'} 
+##################################################
+# True log-likelihood Ratio statistics      #
+##################################################
+
+
+# full model: MM_full
+######################
+# REML ++++++
+loglik_PC_full_REML <- sapply(MM_full$merMod_obj, logLik, REML=T)
+mean_loglik_PC_full_REML <- mean(loglik_PC_full_REML)
+
+# ML ++++++
+loglik_PC_full_ML <- sapply(MM_full$merMod_obj, logLik, REML=F)
+mean_loglik_PC_full_ML <- mean(loglik_PC_full_ML)
+
+
+
+loglik_PC_full <- matrix(NA, ncol = nPC,
+               nrow=length(null_formulas), byrow = TRUE)
+
+for (i in 1:length(REML)){
+  if (REML[i]==TRUE){
+    loglik_PC_full[i,] <- loglik_PC_full_REML
+  }else {loglik_PC_full[i,] <- loglik_PC_full_ML}
+}
+
+
+mean_loglik_PC_full <- rep(mean_loglik_PC_full_ML, 
+                           length(null_formulas))
+
+mean_loglik_PC_full[REML] <- mean_loglik_PC_full_REML
+
+
+
+# Null models  
+######################
+res.parlmer_NULL <- vector("list", length = length(null_formulas))
+names(res.parlmer_NULL) <- names(REML) <- names(null_formulas)
+
+
+for (i in 1:length(null_formulas)) {
+  # run parlmer
+  res.parlmer_NULL[[i]] <- parlmer(design, 
+                outcomes, null_formulas[[i]], REML=REML[i])
+}
+
+# Save the results ------------
+MM_PC_null <- lapply(res.parlmer_NULL, function(x) x[["merMod_obj"]])
+
+ranNames <- sapply(res.parlmer_NULL, function(x) x[["ranNames"]])
+Fixvarnames <- lapply(res.parlmer_NULL, function(x) x[["fixNames"]])
+
+varcor_random <- vector(mode = "list", length = length(null_formulas))
+fixef_PC <- vector(mode = "list", length = length(null_formulas))
+modmat_fixed <- vector(mode = "list", length = length(null_formulas))
+M0 <- vector(mode = "list", length = length(null_formulas))
+
+
+for (i in 1:length(null_formulas)){
+  varcor_random[[i]] <- sapply(MM_PC_null[[i]], 
+                               function(x)
+                                 as.data.frame(VarCorr(x))$vcov)
+  
+  rownames(varcor_random[[i]]) <- c(names(VarCorr(MM_PC_null[[i]][[1]])),
+                                    "Residual")
+
+  fixef_PC[[i]] <- sapply(MM_PC_null[[i]], fixef)
+
+  modmat_fixed[[i]] <- model.matrix(MM_PC_null[[i]][[1]], type = "fixed")
+
+  # intercept
+  XM0 <- modmat_fixed[[i]]
+  XM0[,-1] <- 0
+  M0_PC <- XM0%*%fixef_PC[[i]]
+  M0[[i]] <- M0_PC%*%t(spectra_PCA_loadings)
+}
+
+
+# Effect matrices computation ------------
+index <- vector("list", length=length(null_formulas))
+fixNames_int <- lapply(Fixvarnames, function(x) c("(Intercept)", x))
+
+colnam <- lapply(modmat_fixed,  colnames)
+
+index <- vector("list", length=length(Fixvarnames))
+for (i in 1:length(null_formulas)){
+  id <- c()
+  for (k in 1:length(fixNames_int[[i]])){
+    id <- c(id, grep(fixNames_int[[i]][[k]], colnam[[i]]))
+  }
+  index[[i]] <- id
+}
+
+
+Mfix <- Mfix_PC <- vector("list", length=length(null_formulas))
+names(Mfix) <- names(fixNames_int)
+
+for (i in 1:length(null_formulas)){
+  XMfix = modmat_fixed[[i]]
+  XMfix[,-c(index[[i]])] = 0
+  Mfix_PC[[i]] = XMfix %*% fixef_PC[[i]] # Matrix of the Group effect
+  # backtransform the PC to original coefficients
+  Mfix[[i]] <- Mfix_PC[[i]]%*%t(spectra_PCA_loadings)
+}
+
+fitted_values_PC <- Mfix
+
+######################
+# compute the LRT 
+######################
+
+# objects initialisation ------------
+Res_std_error_PC_null <- vector("list", length=length(null_formulas))
+loglik_PC_null <- vector("list", length=length(null_formulas))
+mean_loglik_PC_null <- c()
+meanlog <- c()
+sumlog <- c()
+
+
+
+
+### compute the LRT ----------------------------
+for (i in 1:length(null_formulas)){
+  Res_std_error_PC_null[[i]]  <- sapply(MM_PC_null[[i]], sigma)
+
+  # meanlog and sumlog
+  loglik_PC_null[[i]] <- sapply(MM_PC_null[[i]], logLik, REML=REML[i])
+  mean_loglik_PC_null[i] <- mean(loglik_PC_null[[i]])
+
+  meanlog[i] <- -2*(mean_loglik_PC_null[i] /mean_loglik_PC_full[i])
+  sumlog[i] <- 2*(sum(loglik_PC_full[i,] - loglik_PC_null[[i]]))
+}
+
+names(meanlog) <- names(null_formulas)
+names(sumlog) <- names(null_formulas)
+
+
+# Graphs ----------------------------
+
+col1="blue"
+col2="red"
+par(mar=c(4,3,2,6))
+dif <- vector(mode = "list")
+for (i in 1:length(null_formulas)){
+  # graphs
+  mat <- cbind(loglik_PC_null[[i]], loglik_PC_full[i,])
+  rownames(mat) <- paste0("PC", 1:nPC)
+  col <- c(col1,col2)
+  par(xpd=TRUE)
+  barplot(t(mat), beside=T, ylab="Log-likelihood",
+          cex.names=0.8, las=2, col=col, 
+          main = paste("log-likelihoods",names(null_formulas)[i]),
+          xpd=TRUE)
+
+  legend("topright", legend = c("loglik restricted","loglik full"),
+         fill = col, bty = "n", inset=c(-0.1,0))
+  
+   dif[[i]] <- 2*(mat[,2] - mat[,1])
+  
+  
+}
+
+
+
+difmat <- do.call(cbind, dif)
+colnames(difmat) <- names(null_formulas)
+col=c(darkblue,turquoise,violetred , limegreen)
+barplot(t(difmat), beside = TRUE, col=col,
+        main = "Log-likelihood ratios")
+legend("topright", legend = names(null_formulas), 
+       title = "Removed effect", col = col, pch=15)
+
+
+
+```
+
+
+
+## Booststrap tests 
+
+```{r, eval=FALSE, out.width="49%",fig.show='hold'} 
+### Bootstrap ---------------------------------------
+# bootstrapLT input arguments:
+# MM_null = MM_PC_null$Sampling
+# useREML=TRUE
+# null_formula <- null_formulas[[2]]
+
+ 
+bootstrapLT <- function(null_effect, useREML, MM_null, null_formula) {
+  
+  # simulate y from null models --------
+  nPC <- length(MM_null)
+  simulatedY <- c()
+
+  for (i in 1:nPC){
+    ysim       <- unlist(simulate(MM_null[[i]], re.form=NA))
+    simulatedY <- cbind(simulatedY, ysim)
+  }
+  
+
+  y <- simulatedY
+  dimnames(y) <- dimnames(outcomes)
+
+  # build restricted model -------
+  # print("null")
+  f_null <- parlmer(design, outcomes = y, null_formula, REML=useREML)
+
+  
+  # build full model -------
+  # print("full")
+  f_full <- parlmer(design, outcomes = y, form, REML=useREML)
+
+  MM_f_null <- f_null$merMod_obj
+  MM_f_full <- f_full$merMod_obj
+
+  # LR -------
+  loglikelihood_null <- sapply(MM_f_null, logLik, REML=useREML)
+  mean_loglikelihood_null <- mean(loglikelihood_null)
+
+  loglikelihood_full <- sapply(MM_f_full, logLik, REML=useREML)
+  mean_loglikelihood_full <- mean(loglikelihood_full)
+
+  sumlog <- 2*(sum(loglikelihood_full - loglikelihood_null))
+  sumlog
+
+}
+
+
+sumlog_boot <- vector("list", length=length(null_formulas))
+
+system.time(
+for (i in 1:length(null_formulas)){
+ 
+  null_effect <- null_effects[i]
+  print(null_effect)
+  sumlog_boot[[i]] = replicate(nsim, 
+                           bootstrapLT(null_effect = null_effect, 
+                           MM_null = MM_PC_null[[null_effect]],
+                           useREML =REML[null_effect],
+                           null_formula = null_formulas[[null_effect]]),
+                           simplify = TRUE)
+
+}
+)
+
+save(sumlog_boot, sumlog, file = file.path(out_path, name))
+
+```
+
+
+```{r, eval=TRUE}
+load(file=file.path(out_path, name))
+```
+
+## Drawings
+
+### Histogram drawings
+
+```{r}
+names(sumlog_boot) <- casefold(names(null_formulas), upper = FALSE)
+
+######################
+# Time
+######################
+# pdf(file = file.path(fig_path, "HSD_hist_Time.pdf"),
+#     width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE, mfrow=c(1,1))
+
+df <- nPC *   1 # df for Time and Tube
+
+m=hist(sumlog_boot$time, freq=F, breaks=100,
+       xlab="Global Likelihood Ratio Statistic",
+       xlim=range(sumlog["Time"], sumlog_boot$time),
+       ylim = c(0,0.08),
+       col = gray67,border = gray67,
+       main = " Fixed Time effect", cex.main = 2.2)
+lines(density(sumlog_boot$time), col=darkblue,lwd=2)
+lines(dchisq(seq(0,max(sumlog_boot$time)), df), col= "limegreen", lwd = 4)
+points(sumlog["Time"], 0, col="red", pch=19, lwd=6)
+legend("topright",
+       legend = c(paste0("True GLRT: ", round(sumlog["Time"],2)),
+                  "Kernel density", paste0("chi2 distrib. (df=", df,")")),
+       col = c("red", darkblue, "limegreen"), lty=c(NA,1,1),pch=c(19,NA,NA),
+       inset=c(-0.2,0),box.lty=0, cex = 1.4, y.intersp = 0.8, lwd=c(4))
+
+# dev.off()
+
+
+######################
+# Tube
+######################
+# pdf(file = file.path(fig_path, "HSD_hist_Tube.pdf"),
+#     width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE, mfrow=c(1,1))
+
+df <- nPC *   1 # df for Time and Tube
+
+m=hist(sumlog_boot$tube, freq=F, breaks=100,
+       xlab="Global Likelihood Ratio Statistic",
+       xlim=range(sumlog["Tube"], sumlog_boot$tube),
+       ylim = c(0,0.08),
+       col = gray67,border = gray67,
+       main = " Fixed Tube effect", cex.main = 2.2)
+lines(density(sumlog_boot$tube), col=darkblue,lwd=2)
+lines(dchisq(seq(0,max(sumlog_boot$tube)), df), col= "limegreen", lwd = 4)
+points(sumlog["Tube"], 0, col="red", pch=19, lwd=6)
+legend("topright",
+       legend = c(paste0("True GLRT: ", round(sumlog["Tube"],2)),
+                  "Kernel density", paste0("chi2 distrib. (df=", df,")")),
+       col = c("red", darkblue, "limegreen"), lty=c(NA,1,1),pch=c(19,NA,NA),
+       inset=c(-0.2,0),box.lty=0, cex = 1.4, y.intersp = 0.8, lwd=c(4))
+
+# dev.off()
+
+
+######################
+# Volunteer
+######################
+# pdf(file = file.path(fig_path, "HSD_hist_Volunteer.pdf"),
+#     width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE)
+df <- nPC
+m=hist(sumlog_boot$volunteer, freq=F, breaks=100,
+       xlab="Global Likelihood Ratio Statistic",
+       xlim=range(sumlog["Volunteer"], sumlog_boot$volunteer),
+       col = gray67,border = gray67,
+       main = " Random Volunteer effect",
+       cex.main = 2.2)
+lines(density(sumlog_boot$volunteer), col=darkblue,lwd=2)
+# y <- (1/2*dchisq(seq(0,30), df)+
+#         (1/2*dchisq(seq(0,30), 0)))
+
+# lines(0:30,y, col= "limegreen", lwd = 4)
+
+points(sumlog["Volunteer"], 0, col="red", pch=19, lwd=6)
+legend("topright",
+       legend = c(paste0("True GLRT: ", round(sumlog["Volunteer"],2)),
+                  "Kernel density"),
+       col = c("red", darkblue), lty=c(NA,1),pch=c(19,NA),
+       inset=c(-0.2,0),box.lty=0, cex = 1.4, y.intersp = 0.8, lwd=c(4))
+# dev.off()
+
+######################
+# Sampling
+######################
+# pdf(file = file.path(fig_path, "HSD_hist_Sampling.pdf"),
+#     width = 7, height = 5)
+par(mar=c(2.1, 2.1, 2.1, 7.5), xpd=TRUE)
+df <- nPC
+m=hist(sumlog_boot$sampling, freq=F, breaks=100,
+       xlab="Global Likelihood Ratio Statistic",
+       xlim=range(sumlog["Sampling"], sumlog_boot$sampling),
+       col = gray67,border = gray67,
+       main = " Random Sampling effect",
+       cex.main = 2.2)
+lines(density(sumlog_boot$sampling), col=darkblue,lwd=2)
+# y <- (1/2*dchisq(seq(0,30), df)+
+#         (1/2*dchisq(seq(0,30), 0)))
+
+# lines(0:30,y, col= "limegreen", lwd = 4)
+
+points(sumlog["Sampling"], 0, col="red", pch=19, lwd=6)
+legend("topright",
+       legend = c(paste0("True GLRT: ", round(sumlog["Sampling"],2)),
+                  "Kernel density"),
+       col = c("red", darkblue), lty=c(NA,1),pch=c(19,NA),
+       inset=c(-0.2,0),box.lty=0, cex = 1.4, y.intersp = 0.8, lwd=c(4))
+# dev.off()
+
+```
+
+
+### bootstrap p-values
+```{r, eval=TRUE}
+pval <- c()
+for (i in 1:length(null_formulas)){
+ pval[i] <- (sum(sumlog[i]<sumlog_boot[[i]])+1)/(nsim+1)
+}
+
+names(pval) <- names(null_formulas)
+pander("p-values")
+pander(pval)
+
+```
+
+## p-value based on chi2 distribution for fixed effects
+
+```{r}
+pander("true GLLR:")
+sumlog["Time"]
+df <- 1*nPC
+curve(dchisq(x, df=df), col='red', main = "Chi-Square Density Graph",
+          from=0,to=60)
+pander("p-value Time")
+pchisq(sumlog["Time"], df=df, lower.tail=FALSE)
+pander("p-value Tube")
+pchisq(sumlog["Tube"], df=df, lower.tail=FALSE)
+
+
+```
+
+
+### Article journal graph
+
+```{r, eval=TRUE}
+difmat <- do.call(cbind, dif)
+difmat <- data.frame(PC=substr(rownames(difmat),3,4), difmat)
+colnames(difmat) <- c("PC", names(null_formulas))
+difmat <- gather(difmat, key=Effect, value = value, Time, Tube, Volunteer, Sampling)
+difmat$Effect <- factor(difmat$Effect, levels = c("Time", "Tube", "Volunteer", "Sampling"))
+
+difmat$Effect
+
+
+LLRplot <- ggplot(data=difmat, aes(x=PC, y=value, fill = Effect)) +
+  geom_bar(width=0.5,stat="identity", position=position_dodge(width=0.5)) +
+  theme_classic()+labs(title="(Restricted) Log-likelihood Ratios") +  
+  ylab(label="(R)LLR") +
+  guides(fill=guide_legend(title="Removed effect"))
+
+
+tab <- round(pval[c(4,3, 1,2)], 4)
+tab[2:4] <- paste("<", round(pval[1:3], 4))
+tab <- data.frame(Effect = names(tab), `p-value` = tab,
+                  chi2 = c("<5e-04","<5e-04","-", "-"))
+pval_boot.table <- ggtexttable(tab,cols = c("Effect",
+                                            "Boostrapped p-value", 
+                                            "Chi2 test"),
+                                 rows = NULL)
+
+
+LLR_pval_plot <- ggarrange(LLRplot, pval_boot.table,
+                ncol = 1, nrow = 2,
+                heights = c(1,  0.3), common.legend=TRUE)
+
+# ggexport(LLR_pval_plot, filename = file.path(fig_path,"HSD_LLR_pval_plot.pdf"),
+#          height = 6, width = 5)
+
+LLR_pval_plot
+
+# journal article output
+
+p <- LLRplot + annotation_custom(ggplotGrob(pval_boot.table),
+                              xmin = 13, ymin = 400)
+p
+
+# ggexport(p, filename = file.path(fig_path,paste0(Vers,"HSD_GLLR.pdf")),
+#          width=7, height=4.5, pointsize=5)
+
+
+
+```
+
+
+
+### Chapter graph
+
+```{r, eval=TRUE}
+difmat <- do.call(cbind, dif)
+difmat <- data.frame(PC=substr(rownames(difmat),3,4), difmat)
+colnames(difmat) <- c("PC", names(null_formulas))
+difmat <- gather(difmat, key=Effect, value = value, Volunteer, Sampling,     Tube, Time)
+difmat$Effect <- as.factor(difmat$Effect)
+difmat$Effect <- factor(difmat$Effect,levels(difmat$Effect)[c(4,1,3,2)])
+
+difmat2 <- cbind(Time=difmat[difmat$Effect=="Time", "value"],
+                 Tube=difmat[difmat$Effect=="Tube", "value"],
+                 Volunteer=difmat[difmat$Effect=="Volunteer", "value"],
+                 Sampling=difmat[difmat$Effect=="Sampling", "value"]
+                 )
+
+rownames(difmat2) <- c(1:dim(difmat2)[1])
+
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+
+# pdf(file.path(fig_path, paste0(Vers,"HSD_GLLR.pdf")),width=8, 
+#     height=6, pointsize = 14)
+
+
+par(mar=c(4,4,4,4))
+
+# plotting settings -------------------------------------------------------
+ylim <- range(mat)*c(1,1.5)
+angle1 <- rep(c(45,45,135), length.out=4)
+angle2 <- rep(c(45,135,135), length.out=4)
+density1 <- seq(5,35,length.out=4)
+density2 <- seq(5,35,length.out=4)
+angle1 <- rev(angle1)
+angle2 <- rev(angle2)
+density1 <- rev(density1)
+density2 <- rev(density2)
+
+barplot(t(difmat2), beside=TRUE,col = gg_color_hue(4),ylab="(R)LLR", 
+        xlab="PC", 
+         main = "(Restricted) Log-likelihood Ratios",
+        angle=angle1, density=density1)
+barplot(t(difmat2), beside=TRUE, add=TRUE, col = gg_color_hue(4),
+        ylab="(R)LLR", xlab="PC", 
+         main = "(Restricted) Log-likelihood Ratios",
+        angle=angle2, density=density2)
+legend("topright", legend = colnames(difmat2), 
+       title = "Removed effect:", col = gg_color_hue(4),
+       fill=gg_color_hue(4),angle=angle1, density=density1)
+par(bg="transparent")
+legend("topright", legend = colnames(difmat2), 
+       title = "Removed effect:", col = gg_color_hue(4),
+       fill=gg_color_hue(4),angle=angle2, density=density2)
+
+# dev.off()
+
+# pdf(file.path(fig_path, paste0(Vers,"HSD_pval.pdf")))
+pval_boot.table
+# dev.off()
+```
