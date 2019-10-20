@@ -28,6 +28,6 @@ html preview from: https://github.com/htmlpreview/htmlpreview.github.com
 
 1. [Human serum and urine NMR spectra](https://github.com/ManonMartin/thesisMaterial/tree/master/Datasets/1_human_serum_urine)
 2. [Semi artificial urine NMR spectra](https://github.com/ManonMartin/thesisMaterial/tree/master/Datasets/2_semi_artificial_urine)
-3. [3Citrate hippurate urine NMR spectra](https://github.com/ManonMartin/thesisMaterial/tree/master/Datasets/3_citrate_hippurate_urine)
+3. [Citrate hippurate urine NMR spectra](https://github.com/ManonMartin/thesisMaterial/tree/master/Datasets/3_citrate_hippurate_urine)
 4. [Repeatability/reproducibility NMR spectra](https://github.com/ManonMartin/thesisMaterial/tree/master/Datasets/4_repeatability_reproducibility)
 5. [Sensory data](https://github.com/ManonMartin/thesisMaterial/tree/master/Datasets/5_sensory)
