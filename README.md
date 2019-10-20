@@ -10,7 +10,9 @@ R codes and datasets from my PhD thesis
   
  ### PLS
  
- ### [ASCA and global methods](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/4-ASCA_globalmethods/Code_article_Guisset_et_al.html)
+ ### ASCA+ and global methods
+ 
+  * [ASCA+ and global methods](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/4-ASCA_globalmethods/Code_article_Guisset_et_al.html)
  
  
  ### LiMM-PCA
