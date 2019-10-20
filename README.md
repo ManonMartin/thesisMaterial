@@ -2,18 +2,20 @@
 R codes and datasets from my PhD thesis
 
 ## R codes (htmlpreview):
-* preprocessing
-  + [GraphsNMRPretreat](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/2-Preprocessing/GraphsNMRPretreat.html#1_pre-processing_workflow)
-  + [MICResults](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/2-Preprocessing/MICResults.html)
+
+ ### Pre-processing with PepsNMR
+ 
+  * [GraphsNMRPretreat](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/2-Preprocessing/GraphsNMRPretreat.html#1_pre-processing_workflow)
+  * [MICResults](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/2-Preprocessing/MICResults.html)
   
- * PLS
+ ### PLS
  
- * [ASCA and global methods](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/4-ASCA_globalmethods/Code_article_Guisset_et_al.html)
+ ### [ASCA and global methods](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/4-ASCA_globalmethods/Code_article_Guisset_et_al.html)
  
  
- * LiMM-PCA
-   + [Sensory dataset](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/5-LiMMPCA/Sensory_Data_Naes_interaction.html)
-   + [Repeatability/reproducibility dataset](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/5-LiMMPCA/SerumHumanData.html)
+ ### LiMM-PCA
+   * [Sensory dataset](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/5-LiMMPCA/Sensory_Data_Naes_interaction.html)
+   * [Repeatability/reproducibility dataset](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/5-LiMMPCA/SerumHumanData.html)
   
   
   
