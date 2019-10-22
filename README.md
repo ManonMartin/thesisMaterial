@@ -10,9 +10,9 @@ R codes and datasets from my PhD thesis
   
  ### PLS
  
-  * [](https://htmlpreview.github.io/?)
-  * [](https://htmlpreview.github.io/?)
-  * [](https://htmlpreview.github.io/?)
+  * [Methods illustration: 1 sub-sample](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/3-PLS/Application1sample.html)
+  * [Methods comparison - size = 200](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/3-PLS/Comp_methods_main%20-%20size%20%3D%20200.html)
+  * [Methods comparison - size = 60](https://htmlpreview.github.io/?https://raw.githubusercontent.com/ManonMartin/thesisMaterial/master/R_Codes/3-PLS/Comp_methods_main%20-%20size%20%3D%2060.html)
  
  ### ASCA+ and global methods
  
