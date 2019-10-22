@@ -1,0 +1,753 @@
+---
+title: "Application of the methods to one subsample"
+author: "Manon Martin"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output:
+  html_document:
+    smart: FALSE
+    code_folding: hide
+    collapsed: yes
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 9
+    highlight: tango
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+col_vect2 <- c("limegreen", "mediumblue", "dodgerblue", 
+               "firebrick",
+              "firebrick1")
+
+col_vect3 <- c("mediumvioletred", "mediumblue", "dodgerblue", 
+               "forestgreen",
+              "limegreen")
+
+require(MBXUCL)
+require(ggplot2)
+require(reshape2)
+require(cowplot)
+require(pander)
+require(dplyr)
+require(plyr)
+require("parallel")
+require("spls")
+require(gridExtra)
+
+Bexp <- c(c(139:141, 159:161), 169:171, c(147:153, 177:183),  c(339:341, 359:361), c(369:371), c(347:353, 377:383))
+
+
+
+## Set directory
+##################
+require(here)
+proj.path <- here()
+setwd(proj.path)
+
+
+data_path <- "outputs"
+
+fig_path <- "outputs"
+out_path <- "outputs"
+
+# source all functions
+source("All_FUN.R")
+
+```
+
+# Number of the observation
+
+```{r}
+id <- 1
+```
+
+
+# Load the simulated subdatasets
+```{r loadData}
+
+load(file.path(data_path, "200all_subsamples.RData"))
+
+x <- rbind(all_subsamples$trainOut$Sim1$x,all_subsamples$testOut$Sim1$x)
+m <-  dim(x)[2]
+n <- dim(x)[1]
+
+
+
+```
+
+
+
+
+# Recover results from the outerloops
+
+```{r, eval=TRUE}
+Rdata.path <- c("200res_outerloop_ttest.RData",  
+                "200res_outerloop_PLS.RData", "200res_outerloop_OPLS.RData",
+                "200res_outerloop_SPLS_allEta.RData",
+                "200res_outerloop_LsOPLS_allEta.RData")
+
+Rdata.path <- file.path(data_path, Rdata.path)
+for (i in Rdata.path){
+  load(i)
+}
+```
+
+
+# recover the subsample 
+```{r}
+datasimul_path <- "../../Datasets/2_semi_artificial_urine"
+
+dataname="Datasimul"
+
+load(file.path(datasimul_path,paste0(dataname,".Rdata")))
+
+rownames(x) <- 1:nrow(x)
+x_raw <- x
+y_raw <- y
+size_dt<- 200
+set.seed(1)
+res_boot <- genData(y = y_raw, x = x_raw, nsimul = 1, 
+                    size = size_dt, seed = 1)
+
+res_boot <- mapply(create1Boot, y = res_boot$yy, x = res_boot$xx, 
+       MoreArgs = list(prop = 0.8), USE.NAMES = TRUE, SIMPLIFY = FALSE)
+  
+trainOut <- sapply(res_boot, function(x) x[["dftrain"]], simplify = FALSE)
+testOut <- sapply(res_boot, function(x) x[["dftest"]], simplify = FALSE)
+
+trainOutX <- sapply(trainOut, function(x) x$x, simplify = FALSE)
+trainOuty <- sapply(trainOut, function(x) x$y, simplify = FALSE)
+
+res_kfolds <- mapply(createKFolds, x = trainOutX, y = trainOuty, 
+                     MoreArgs = list(k = 10), 
+                     USE.NAMES = TRUE, SIMPLIFY = FALSE)
+
+trainIn <- sapply(res_kfolds, function(x) x[["dftrain"]], 
+                  simplify = FALSE)
+testIn <- sapply(res_kfolds, function(x) x[["dftest"]], 
+                 simplify = FALSE)
+
+all_subsamples1 <- list(trainOut=trainOut, testOut=testOut, 
+                       trainIn=trainIn, testIn=testIn,
+                       trainOutX=trainOutX, trainOuty=trainOuty)
+```
+
+# PCA on the subsample
+
+```{r}
+
+ypca <- all_subsamples$trainOut[[id]]$y
+xpca <- all_subsamples$trainOut[[id]]$x
+res_pca <- SVDforPCA(xpca)
+scores_pca <- res_pca$scores
+loadings_pca <- res_pca$loadings
+
+DrawScores(res_pca, color = ypca)
+
+```
+
+
+```{r}
+
+# regression coefficients =======================
+Reg_coefs <- rbind(PLS = res_outerloop_PLS$rank_B_all$PLS_coef[id,],
+      OPLS = res_outerloop_OPLS$rank_B_all$OPLS_coef[id,],
+      SPLS = res_outerloop_SPLS_allEta$best$rank_B_all$SPLS_coef[id,],
+      LSOPLS = res_outerloop_LsOPLS_allEta$best$rank_B_all$LsOPLS_coef[id,])
+colnames(Reg_coefs) <- colnames(all_subsamples$trainOut[[1]]$x)
+
+# VIP =======================
+VIPs <- rbind(PLS = res_outerloop_PLS$rank_B_all$PLS_vip[id,],
+              OPLS = res_outerloop_OPLS$rank_B_all$OPLS_VIP[id,])
+colnames(VIPs) <- colnames(all_subsamples$trainOut[[1]]$x)
+
+
+# Loadings and scores =======================
+# 1. recover meta-parameters
+
+MP_PLS <- res_outerloop_PLS$HP[[id]]
+MP_OPLS <- res_outerloop_OPLS$nOcopt[[id]]
+MP_SPLS <- res_outerloop_SPLS_allEta$HP_opt[[id]]
+
+ID <- sapply(res_outerloop_LsOPLS_allEta$byeta_opt, function(x) which.max(x[,"mean_AUC"]))
+MP_LSOPLS <- mapply(function(x, id) x[id,2:3], x=res_outerloop_LsOPLS_allEta$byeta_opt, id=ID, SIMPLIFY = FALSE)[[id]]
+
+
+ALL_MP <- list(PLS = MP_PLS, OPLS = MP_OPLS, SPLS = MP_SPLS, LSOPLS = MP_LSOPLS)
+
+# 2. run the analyses with the selected meta-parameters
+df <- as.data.frame(cbind(y = all_subsamples$trainOut[[id]]$y, 
+                         all_subsamples$trainOut[[id]]$x))
+
+y <- all_subsamples$trainOut[[id]]$y
+x <- all_subsamples$trainOut[[id]]$x
+
+### PLS ==============
+res_mvr <- pls::mvr(y ~ . -1, ncomp = MP_PLS, data = df,
+                 validation = "none", method = "oscorespls") # method = NIPALS
+
+scores_pls <- res_mvr$scores
+loadings_pls <- res_mvr$loadings
+colnames(scores_pls) <- colnames(loadings_pls) <- paste0("PrC", 1:ncol(scores_pls))
+
+### OPLS ==============
+res_opls <- OPLSDA(x=x, y=y, impT = FALSE, impG = FALSE, 
+                    no = MP_OPLS)
+
+scores_p_opls <- res_opls$Tp
+loadings_p_opls <- res_opls$Pp
+colnames(scores_p_opls) <- colnames(loadings_p_opls ) <- 
+  paste0("PrC", 1:ncol(scores_p_opls))
+
+scores_ortho_opls <- res_opls$Tortho
+loadings_ortho_opls <- res_opls$Portho
+colnames(scores_ortho_opls) <- colnames(loadings_ortho_opls) <- 
+  paste0("OC", 1:ncol(scores_ortho_opls))
+
+
+### SPLS ==============
+# /!\ Slightly modified version of SPLS function from the spls package 
+# to recover scores/loadings
+
+# install.packages("spls_scores", repos = NULL, type = "source")
+
+library(spls)
+
+res_spls <- spls(x = x, y = y, 
+                     K = MP_SPLS$K, eta = MP_SPLS$eta, 
+                     kappa=0.5,select="pls2", fit="simpls",
+                     scale.x=FALSE, scale.y=FALSE, eps=1e-4, 
+                     maxstep=100, trace=TRUE)
+
+scores_spls <- res_spls$scores
+loadings_spls <- res_spls$loading
+colnames(scores_spls) <- colnames(loadings_spls) <- paste0("PrC", 1:ncol(scores_spls))
+      
+loadings_spls_ok <- matrix(0, nrow = m, ncol = MP_SPLS$K, dimnames = list(colnames(x), NULL))
+
+for (i in 1:MP_SPLS$K){
+  loadings_spls_ok[colnames(x) %in% rownames(loadings_spls) ,i] <- loadings_spls[,i]
+}
+
+loadings_spls <- loadings_spls_ok
+colnames(loadings_spls) <- paste0("PrC", 1:ncol(loadings_spls))
+
+
+
+
+### LSOPLS ==============
+
+#Manual OPLS:
+#Deflate the X matrix:
+OPLSDA_res <- MBXUCL::OPLSDA(x = x, y = y, 
+                                 impT = FALSE, impG = FALSE, 
+                                 no = MP_LSOPLS["nOc"])
+Xopls1 <- OPLSDA_res$Xopls
+Wortho <- OPLSDA_res$Wortho
+Portho <- OPLSDA_res$Portho
+
+scores_ortho_lsopls <- OPLSDA_res$Tortho
+loadings_ortho_lsopls <- OPLSDA_res$Portho
+
+colnames(scores_ortho_lsopls) <- colnames(loadings_ortho_lsopls) <- 
+  paste0("OC", 1:ncol(scores_ortho_lsopls))
+
+# SPLS on the deflated matrix
+res_lsopls <- spls(x=Xopls1, y=y, K = 1, 
+                           eta = MP_LSOPLS["eta"], kappa=0.5, 
+                           select="simpls",  fit="simpls", scale.x=FALSE,
+                           scale.y=FALSE, eps=1e-4, 
+                           maxstep=100, trace=FALSE)
+scores_p_lsopls <- res_lsopls$scores
+
+loadings_p_lsopls <- res_lsopls$loading
+      
+loadings_lsopls_ok <- matrix(0, nrow = m, ncol = 1, dimnames = list(colnames(x), NULL))
+
+
+loadings_lsopls_ok[colnames(x) %in% rownames(loadings_p_lsopls) ,1] <- loadings_p_lsopls[,1]
+
+loadings_p_lsopls <- loadings_lsopls_ok
+colnames(scores_p_lsopls) <- colnames(loadings_p_lsopls) <- paste0("PrC", 1:ncol(scores_p_lsopls))
+
+
+
+```
+
+
+# Meta-parameters
+```{r}
+print("ALL_MP")
+print(ALL_MP)
+```
+
+
+# Graphs
+
+## MP SPLS
+
+```{r}
+eta_spls <- seq(0.05,0.95, 0.05)
+K_spls <- c(1:15)
+res <- outerloop_SPLS_allEta(all_subsamples = 
+                     all_subsamples1, eta =  eta_spls, 
+                     K = K_spls, mc.cores = 2)
+
+
+ALL_HP <- res$grid_HP
+
+AUC_p <- ggplot(data = ALL_HP, aes(x=K, y=eta, fill=mean_AUC)) + 
+   geom_tile(color = "white")+ ggtitle("Heatmap of AUC for SPLS")+
+ scale_fill_gradientn(colours = rev(rainbow(20, start=0, end=0.72)), 
+   limit = range(ALL_HP$mean_AUC), space = "Lab",
+   name="AUC") + xlab("# PrC")+
+  theme_minimal()
+
+
+spls_mstar <- function(K, eta){
+  res_spls <- spls(x = x, y = y, 
+                     K = K, eta = eta, 
+                     kappa=0.5,select="pls2", fit="simpls",
+                     scale.x=FALSE, scale.y=FALSE, eps=1e-4, 
+                     maxstep=100, trace=FALSE)
+  sum(res_spls$betahat!=0)
+}
+ 
+res <- mapply(spls_mstar , K=ALL_HP$K, eta=ALL_HP$eta)
+
+ALL_HP_mstar <- data.frame(K = ALL_HP$K, eta=ALL_HP$eta, size = res)
+
+mstar_p <- ggplot(data = ALL_HP_mstar, aes(x=K, y=eta, fill=size)) + 
+   geom_tile(color = "white")+ ggtitle("Heatmap of m* for SPLS")+
+ scale_fill_gradientn(colours = rev(rainbow(20, start=0, end=0.72)), 
+   limit = range(ALL_HP_mstar$size), space = "Lab",
+   name="m*") +  xlab("# PrC") +
+  theme_minimal()
+mstar_p
+
+
+p <- grid.arrange(AUC_p,mstar_p, ncol=2)
+ggsave("Ex_heatmap_AUC_mstar_SPLS.png",plot = p, width = 25, height = 10, 
+       units = "cm", path = out_path, scale=0.9)
+
+
+```
+
+
+## coef path plots
+```{r, eval=TRUE}
+# SPLS  ========================
+coef.spls <- vector(mode = "list")
+for (i in 1:15){
+res_splsAllLV <- res_spls <- spls(x = x, y = y, 
+                     K = i, eta = MP_SPLS$eta, 
+                     kappa=0.5,select="pls2", fit="simpls",
+                     scale.x=FALSE, scale.y=FALSE, eps=1e-4, 
+                     maxstep=100, trace=FALSE)
+coef.spls[[i]] <- coef(res_splsAllLV)
+}
+
+# plot(res_splsAllLV)
+
+coef.spls <- do.call(cbind, coef.spls)
+coef.spls <- cbind(rep(0,m), coef.spls)
+ncol <- sum(rowSums(coef.spls)!=0)
+coef.spls <- coef.spls[which(rowSums(coef.spls)!=0),]
+
+# LSOPLS ========================
+coef.f <- vector(mode = "list")
+for (i in 2:15){
+  OPLSDA_res <- MBXUCL::OPLSDA(x = x, y = y, 
+                                 impT = FALSE, impG = FALSE, 
+                                 no = (i-1))
+Xopls1 <- OPLSDA_res$Xopls
+Wortho <- OPLSDA_res$Wortho
+Portho <- OPLSDA_res$Portho
+
+scores_ortho_lsopls <- OPLSDA_res$Tortho
+loadings_ortho_lsopls <- OPLSDA_res$Portho
+
+colnames(scores_ortho_lsopls) <- colnames(loadings_ortho_lsopls) <- 
+  paste0("OC", 1:ncol(scores_ortho_lsopls))
+
+# SPLS on the deflated matrix
+res <- spls(x=Xopls1, y=y, K = 1, 
+                           eta = MP_LSOPLS["eta"], kappa=0.5, 
+                           select="simpls",  fit="simpls", scale.x=FALSE,
+                           scale.y=FALSE, eps=1e-4, 
+                           maxstep=100, trace=FALSE)
+coef.f[[i]] <- coef(res)
+}
+
+# without OC
+res_splsAllLV <- res_spls <- spls(x = x, y = y, 
+                     K = 1, eta = MP_SPLS$eta, 
+                     kappa=0.5,select="pls2", fit="simpls",
+                     scale.x=FALSE, scale.y=FALSE, eps=1e-4, 
+                     maxstep=100, trace=FALSE)
+coef.f[[1]] <- coef(res_splsAllLV)
+ 
+coef.f <- do.call(cbind, coef.f)
+coef.f <- cbind(rep(0,m), coef.f)
+
+coef.restr <- coef.f[which(rowSums(coef.f)!=0),]
+
+pdf(file.path(out_path, "plot_spls_regcoef.pdf"),width = 10, height = 4)
+par(mfrow=c(1,2), mar=c(5,4,2,2))
+ncol_spls <- sum(rowSums(coef.spls)!=0)
+col <- rev(rainbow(ncol_spls))
+plot(coef.spls[1,], col=col[1], type="l", ylim = range(coef.spls), 
+     ylab= "Coefficient Estimates", xlab = "nPrC", 
+     main = paste0("Coefficient Path Plot (eta= ",MP_SPLS["eta"],")"),
+     sub = "SPLS",font.sub=2)
+abline(h=0, lty=2, col="red")
+for (i in 2:nrow(coef.spls)){
+  lines(coef.spls[i,], col=col[i])
+}
+
+par(mar=c(5,2,2,2))
+ncol_lsopls <- sum(rowSums(coef.f)!=0)
+col <- rev(rainbow(ncol_lsopls))
+plot(coef.restr[1,], col=col[1], type="l", ylim = range(coef.restr), 
+     ylab= "", xlab = "nPrC (=1) + nOC", main = paste0("Coefficient Path Plot (eta= ",MP_LSOPLS["eta"],")"), sub = "LSOPLS",font.sub=2)
+abline(h=0, lty=2, col="red")
+for (i in 2:nrow(coef.restr)){
+  lines(coef.restr[i,], col=col[i])
+}
+
+dev.off()
+
+```
+
+
+
+## loadings
+
+```{r}
+# first 2 loadings of each methods
+loadings_mat <- list(PCA = loadings_pca[,1:2],
+                     PLS = loadings_pls[,1:2],
+                     OPLS = cbind(loadings_p_opls,
+                                  OC1 = loadings_ortho_opls[,1]),
+                     SPLS = loadings_spls[,1:2],
+                     LSOPLS = cbind(loadings_p_lsopls,
+                                    OC1 = loadings_ortho_lsopls[,1]))
+
+loadingsplots <- vector(mode = "list")
+for (i in 1:length(loadings_mat)){
+  df <- loadings_mat[[i]]
+  df <- melt(df, varnames = c("x", "comp"))
+  
+  df$x <- gsub("`", "", df$x)
+  df$x <- as.numeric(as.character(df$x))
+  
+  p <- ggplot(data=df,aes(x=x,y=value))+geom_col(color="black")
+  p <- p + facet_grid(rows = "comp", scales = "free_y") 
+  p <- p + ggtitle(names(loadings_mat)[i])  +
+    ylab("Loadings")+ 
+    xlab("ppm")
+  p <- p + theme(
+        strip.text.y = element_text(
+          size = 11, color = "white", face = "bold"
+          ),
+        strip.background = element_rect(
+       color="black", fill="black", size=3, linetype="solid"
+       )
+        )
+  p <- p + theme(panel.background = element_rect(fill = 'gray95', 
+                                                 colour = 'white'))
+  p <- p + ggplot2::scale_x_reverse()
+  
+  loadingsplots[[i]] <- p 
+
+}
+
+loadingsplots[[length(loadings_mat)]]=loadingsplots[[length(loadings_mat)]]
+
+p <- plot_grid(loadingsplots[[1]], loadingsplots[[2]], loadingsplots[[3]],loadingsplots[[4]],
+               loadingsplots[[5]],
+               ncol=1, rel_heights=c(1, 1)) 
+
+
+title <- ggdraw() + draw_label("Loadings plots", fontface='bold')
+p <- plot_grid(title, p, ncol=1,rel_heights=c(0.1, 1)) 
+
+p
+
+
+```
+
+```{r}
+# first loading only of each methods
+
+loadings_mat <- cbind(PCA = loadings_pca[,1],
+                     PLS = loadings_pls[,1], 
+                     OPLS = loadings_p_opls[,1],
+                     SPLS = loadings_spls[,1], 
+                     LSOPLS = loadings_p_lsopls[,1])
+
+df <- loadings_mat
+df <- melt(df, varnames = c("ppm", "Method"))
+
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=value)) 
+p <- p + 
+  geom_vline(xintercept =
+               as.numeric(colnames(Reg_coefs)[Bexp]),
+             linetype="dotted",
+             color = "gray70", size=0.6) + geom_segment()+ 
+  theme(panel.background = element_rect(fill = 'gray95', colour = 'white'))
+p <- p + facet_grid(rows = "Method", scales = "free_y") +
+  scale_x_reverse()
+p <- p + ggtitle("First predictive loadings vector") + 
+    xlab("ppm") +
+    ylab("") 
+p <- p + theme(
+        strip.text.y = element_text(
+          size = 11, color = "white", face = "bold"
+          ),
+        strip.background = element_rect(
+       color="black", fill="black", size=3, linetype="solid"
+      ))
+p
+
+ggsave("Ex_loadings.png",plot = p, width = 20, height = 17, 
+       units = "cm", path = out_path)
+
+```
+
+
+## loadings weights
+```{r, eval=FALSE}
+W_SPLS <- res_spls$projection
+
+df <- W_SPLS
+df <- melt(df, varnames = c("Method", "x"))
+  
+p <- ggplot(data=df,aes(x=x,y=value)) + 
+  geom_vline(xintercept =
+               as.numeric(colnames(Reg_coefs)[Bexp]),
+             linetype="dotted",
+             color = "gray70", size=0.6)+ geom_col(color="black") + 
+  theme(panel.background = element_rect(fill = 'gray95', colour = 'white'))
+p <- p + facet_grid(rows = "Method") +
+  scale_x_reverse()
+p <- p + ggtitle("Regression coefficients") + 
+    xlab("ppm") +
+    ylab("") 
+p <- p + theme(
+        strip.text.y = element_text(
+          size = 11, color = "white", face = "bold"
+          ),
+        strip.background = element_rect(
+       color="black", fill="black", size=3, linetype="solid"
+      ))
+p
+
+```
+
+## scores
+
+```{r}
+# first 2 scores of each methods
+col <- col_vect2[1:2][as.factor(y)]
+scores_mat <- list(PCA = scores_pca[,1:2],
+                   PLS = scores_pls[,1:2], 
+                   OPLS = cbind(scores_p_opls, OC1 = -1*scores_ortho_opls[,1]),
+                   SPLS = scores_spls[,1:2], 
+                   LSOPLS = cbind(scores_p_lsopls, OC1 = -1*scores_ortho_lsopls[,1]))
+
+
+scoresplots <- vector(mode = "list")
+for (i in 1:length(scores_mat)){
+  df <- scores_mat[[i]]
+
+scoresplots[[i]] <- ScatterPlot(x= df[,1], y=df[,2],
+                              main = paste(names(scores_mat)[i]), color = y, 
+             size = 1, cex.lab = 3, pch = y, 
+            xlab = colnames(df)[1], ylab = colnames(df)[2]) +  
+  scale_color_manual(name = "y", values=col_vect3[1:2]) +
+  scale_shape_manual(name = "y", values=c(1,2)) +
+            xlim(-max(abs(df[,1])),max(abs(df[,1]))) + 
+            ylim(-max(abs(df[,2])),max(abs(df[,2])))+
+  theme_bw() + geom_vline(xintercept = 0, linetype="dashed", 
+                color = "grey85", size=0.6)+
+   geom_hline(yintercept = 0, linetype="dashed", 
+                color = "grey85", size=0.6)
+
+}
+
+p <- plot_grid(scoresplots[[1]], scoresplots[[2]], scoresplots[[3]],scoresplots[[4]], 
+               scoresplots[[5]], ncol=2, rel_heights=c(1, 1)) 
+
+
+title <- ggdraw() + draw_label("Scores plots", fontface='bold')
+p <- plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1)) 
+
+p
+
+ggsave("Ex_scores.png", plot = p, width = 20, height = 27, 
+       units = "cm", path = out_path)
+```
+
+
+## difference in mean and t-test
+
+```{r}
+# difference in mean
+diffMean <- colMeans(x[y==1,]) - colMeans(x[y==0,])
+plot(diffMean, type="l")
+
+# t-test
+tstat <- res_outerloop_ttest$rank_B_all$tstat
+tstat <- tstat[1,]
+
+df <- rbind(diffMean=diffMean, tstat=tstat)
+df <- melt(df, varnames = c("Method", "x"))
+names(df)[2] <- "ppm"
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=value)) 
+p <- p + 
+  geom_vline(xintercept =
+               as.numeric(colnames(Reg_coefs)[Bexp]),
+             linetype="dotted",
+             color = "gray70", size=0.6) + geom_segment()  + 
+  theme(panel.background = element_rect(fill = 'gray95', colour = 'white'))
+p <- p + facet_grid(rows = "Method", scales = "free_y") +
+  scale_x_reverse()
+p <- p + ggtitle("Difference of means ans t-statistic") + 
+    xlab("ppm") +
+    ylab("") 
+p <- p + theme(
+        strip.text.y = element_text(
+          size = 11, color = "white", face = "bold"
+          ),
+        strip.background = element_rect(
+       color="black", fill="black", size=3, linetype="solid"
+      ))
+p
+
+ggsave("Ex_diffMean_tstat.png", plot = p, width = 20, height = 10, 
+       units = "cm", path = out_path)
+```
+
+
+## regression coefficients
+
+```{r}
+# first 2 loadings of each methods
+df <- Reg_coefs
+df <- melt(df, varnames = c("Method", "x"))
+names(df)[2] <- "ppm"
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=value)) 
+p <- p + 
+  geom_vline(xintercept =
+               as.numeric(colnames(Reg_coefs)[Bexp]),
+             linetype="dotted",
+             color = "gray70", size=0.6) + geom_segment() +
+  theme(panel.background = element_rect(fill = 'gray95', colour = 'white'))
+p <- p + facet_grid(rows = "Method") +
+  scale_x_reverse()
+p <- p + ggtitle("Regression coefficients") + 
+    xlab("ppm") +
+    ylab("") 
+p <- p + theme(
+        strip.text.y = element_text(
+          size = 11, color = "white", face = "bold"
+          ),
+        strip.background = element_rect(
+       color="black", fill="black", size=3, linetype="solid"
+      ))
+p
+
+ggsave("Ex_reg_coefs.png", plot = p, width = 20, height = 15, 
+       units = "cm", path = out_path)
+
+```
+
+
+## VIPs
+
+```{r}
+
+df <- VIPs
+df <- melt(df, varnames = c("Method", "x"))
+names(df)[2] <- "ppm"
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=value))
+p <- p + 
+  geom_vline(xintercept =
+               as.numeric(colnames(Reg_coefs)[Bexp]),
+             linetype="dotted",
+             color = "gray70", size=0.6) + geom_segment() 
+
+p <- p + facet_grid(rows = "Method")  +
+  scale_x_reverse()
+p <- p + ggtitle("VIP") + 
+    xlab("ppm") +
+    ylab("")
+p <- p + geom_hline(yintercept = 1, linetype="dashed", 
+                color = "blue", size=0.4)
+p <- p + theme(
+        strip.text.y = element_text(
+          size = 11, color = "white", face = "bold"
+          ),
+        strip.background = element_rect(
+       color="black", fill="black", size=3, linetype="solid"
+      )) + 
+  theme(panel.background = element_rect(fill = 'gray95', colour = 'white'))
+p
+
+ggsave("Ex_VIPs.png", plot = p, width = 20, height = 10, 
+       units = "cm", path = out_path)
+
+
+```
+
+
+## S-plot
+```{r, eval=FALSE}
+# S-plot: cf code memoire
+
+
+ # S-plot correlation and covariance matrices covariance
+    s <- as.matrix(x, ncol = ncol(x))
+    p1 <- c()
+    for (i in 1:ncol(s))  {
+      scov <- cov(s[, i], Tp[, np])
+      p1 <- matrix(c(p1, scov), ncol = 1)  # covariance x-T
+    }
+    # correlation
+    pcorr1 <- c()
+    Tno <- as.matrix(Tp[, np], ncol = 1)
+    for (i in 1:nrow(p1)) {
+      den <- apply(Tno, 2, sd, na.rm = TRUE) * sd(s[, i])
+      corr1 <- p1[i, ]/den
+      pcorr1 <- matrix(c(pcorr1, corr1), ncol = 1)  # correlation
+    }
+
+    # plot
+    pdf(file.path(out_path, "OPLS_Splot.pdf"), width = 10, height = 8)
+
+    par(mfrow=c(1,1))
+    plot(p1, pcorr1, xlab = "p(cov)[1]", ylab = "p(corr)[1]", main = "S-plot (OPLS-DA)",
+        ylim = c(min(pcorr1, na.rm = T) * 1.1, max(pcorr1, na.rm = T) * 1.1),
+        xlim = c(min(p1, na.rm = T) * 1.1, max(p1, na.rm = T) * 1.1))
+    sel <- p1 * pcorr1
+    sel <- order(sel, decreasing = TRUE)[1:nb]
+    text(p1[sel], pcorr1[sel], labels = colnames(s)[sel], cex = 0.7, pos = 1)
+    abline(v = 0, lty = 2)
+    abline(h = 0, lty = 2)
+
+    dev.off()
+```
+

@@ -1,0 +1,28 @@
+importFrom("grDevices", "cm.colors", "dev.new")
+importFrom("graphics", "abline", "axis", "close.screen", "image",
+         "lines", "par", "plot", "points", "screen", "split.screen")
+importFrom("stats", "binomial", "coef", "glm", "hat", "median",
+         "model.matrix", "predict", "quantile", "sd", "uniroot",
+         "weighted.mean")
+
+importFrom("pls", "plsr")
+
+export(ci.spls, coefplot.spls, correct.spls)
+export(plot.spls, heatmap.spls)
+export(cv.sgpls, cv.splsda, cv.spls)
+export(predict.sgpls, predict.splsda, predict.spls)
+export(print.sgpls, print.splsda, print.spls)
+export(coef.sgpls, coef.splsda, coef.spls)
+export(sgpls, splsda, spls)
+
+##S3 generics
+S3method(plot, spls)
+S3method(predict, sgpls)
+S3method(predict, splsda)
+S3method(predict, spls)
+S3method(print, sgpls)
+S3method(print, splsda)
+S3method(print, spls)
+S3method(coef, sgpls)
+S3method(coef, splsda)
+S3method(coef, spls)

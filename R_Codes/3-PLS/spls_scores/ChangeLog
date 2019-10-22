@@ -1,0 +1,33 @@
+2019-05-04  Valentin Todorov  <valentin.todorov@chello.at>
+    * 2.2-3
+    *
+    * R 3.6.0 changes to the random sample() generation which 
+    *   affects comparison with reference output 
+    *
+2018-03-16  Valentin Todorov  <valentin.todorov@chello.at>
+    * 2.2-2
+    *
+    * NAMESPACE - import functions used from standard packages
+    *   like stats, graphics, grDevices
+    *
+    * NAMESPACE - register S3 classes
+    *
+2013-08-02  Valentin Todorov  <valentin.todorov@chello.at>
+    * 2.2-1
+    *
+    * New maintainer: Valentin Todorov  <valentin.todorov@chello.at>
+    *
+    * TESTS\tspls.R - added tests for spls
+    *
+    * MAN\cv.spls.RD - \dontrun{} added to reduce time for checking
+    *
+
+2013-07-01  CRAN
+    * 2.1-3
+    *
+    * Orphaned on 2013-07-01, as former maintainer is
+    *    unresponsive.
+    *
+    * Original-Maintainer: Dongjun Chung <chungdon@stat.wisc.edu>
+    *
+

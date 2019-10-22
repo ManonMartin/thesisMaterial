@@ -1,0 +1,18 @@
+Package: spls
+Version: 2.2-3
+Date: 2019-05-04
+Title: Sparse Partial Least Squares (SPLS) Regression and
+        Classification
+Author: Dongjun Chung <chungdon@stat.wisc.edu>, Hyonho Chun
+        <chun@stat.wisc.edu>, Sunduz Keles <keles@stat.wisc.edu>
+Maintainer: Valentin Todorov <valentin.todorov@chello.at>
+Depends: R (>= 2.14)
+Imports: MASS, nnet, parallel, pls
+Description: Provides functions for fitting a sparse
+        partial least squares (SPLS) regression and classification
+        (Chun and Keles (2010) <doi:10.1111/j.1467-9868.2009.00723.x>).
+License: GPL (>= 2)
+NeedsCompilation: no
+Packaged: 2019-05-04 21:53:24 UTC; Share
+Repository: CRAN
+Date/Publication: 2019-05-04 23:10:03 UTC

@@ -1,0 +1,2318 @@
+---
+title: "Comparison of all the methods"
+author: "Manon Martin"
+date: '`r format(Sys.time(), "%B %d, %Y")`'
+output:
+  html_document:
+    smart: FALSE
+    code_folding: hide
+    collapsed: yes
+    fig_caption: yes
+    fig_height: 6
+    fig_width: 9
+    highlight: tango
+    number_sections: yes
+    theme: united
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r clearall, include=FALSE}
+# Clear plots
+if(!is.null(dev.list())) dev.off()
+# Clear console
+cat("\014") 
+# Clean workspace
+rm(list=ls())
+```
+
+
+```{r setup, include=FALSE}  
+
+knitr::opts_chunk$set(echo = TRUE, fig.show = "hold")
+
+## package requirement
+###########################
+require("pander")
+require("MBXUCL")
+require("pls")
+require("spls")
+require("plyr")
+require("plsVarSel")
+require("ggplot2")
+require("sm") 
+require("ggplot2")
+require("reshape2")
+require("caret")  # createfolds
+require("plyr") # stats on folds
+require("penalized")
+require("parallel")
+require("ggplot2")
+require("reshape2")
+require("cowplot")
+require("gridExtra")
+
+
+## Set directory
+##################
+require(here)
+proj.path <- here()
+setwd(proj.path)
+
+
+data_path <- "../../Datasets/2_semi_artificial_urine"
+
+fig_path <- "outputs"
+out_path <- "outputs"
+
+
+# source all functions
+source("All_FUN.R")
+
+# Colors
+# Colors
+darkblue <- rgb(12,34,75, maxColorValue=255)
+lightblue <- rgb(216,216,216, maxColorValue=255)
+
+turquoise <- "mediumturquoise"
+violetred <- "mediumvioletred"
+
+col_vect <- c("mediumblue", "mediumvioletred", "forestgreen", "firebrick1",
+              "darkorange1","limegreen")
+
+col_vect2 <- c("limegreen", "mediumblue", "dodgerblue", 
+               "firebrick",
+              "firebrick1")
+
+col_vect3 <- c("mediumvioletred", "mediumblue", "dodgerblue", 
+               "forestgreen",
+              "limegreen")
+
+```
+
+
+# Data 
+
+## True biomarkers location
+```{r TBiom, echo=TRUE}
+
+Bexp <- c(c(139:141, 159:161), c(147:153, 167:173), c(179:181),  
+                c(339:341, 359:361), c(347:353, 367:373), c(379:381))
+
+
+Bexplist <- list(c(139:141, 159:161), c(147:153, 167:173), c(179:181),  
+                c(339:341, 359:361), c(347:353, 367:373), c(379:381))
+
+pander("biomarkers index")
+pander(Bexplist)
+
+numBexp <- sapply(Bexplist, function(x) length(x))
+
+mat <- matrix(0, ncol = max(sapply(Bexplist, length)), nrow=6)
+rownames(mat) <- paste("Biom", 1:6)
+for (i in 1:6){
+  mat[i,1:length(Bexplist[[i]])] <- Bexplist[[i]]
+}
+write.csv(mat, file.path(out_path,"trueBiom.csv"))
+
+```
+
+
+
+## Subsamples creation
+
+### Number of samples
+```{r numsamp}
+size_dt <- 200
+# size_dt <- 60
+
+pander("Number of samples")
+pander(size_dt)
+
+```
+
+
+### Subsamples creation
+
+```{r}
+# creation of all the subsamples ###############
+################################################
+
+dataname="Datasimul"
+
+#load data
+##################
+
+load(file.path(data_path,paste0(dataname,".Rdata")))
+
+rownames(x) <- 1:nrow(x)
+pander("dim(x)")
+dim(x)
+pander("dim(y)")
+dim(y)
+
+x_raw <- x
+y_raw <- y
+
+```
+
+#### Graphs
+```{r}
+col_vect2 <- c("cyan4", "goldenrod4","hotpink3","slateblue4",
+               "green3", "darkred")
+col_vect2_adj <- adjustcolor(col_vect2, alpha.f = 0.35)
+
+
+rect_Bexp_plot <- function(){
+  lwd=0.6
+  
+  rect(xleft=7.2756, ybottom=0, xright=7.2364, ytop=(max(x_raw)+5),  col = col_vect2_adj[1],
+       border = col_vect2[1], lty=1, lwd=lwd)
+  rect(xleft=6.8836, ybottom=0, xright=6.8444, ytop=(max(x_raw)+5), col = col_vect2_adj[1],
+       border = col_vect2[1], lty=1, lwd=lwd)
+  #
+  rect(xleft=6.6876, ybottom=0, xright=6.6484, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[2],  border = col_vect2[2], lty=2, lwd=lwd)
+  
+  rect(xleft=7.1188, ybottom=0, xright=7.0012, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[2], border = col_vect2[2], lty=2, lwd=lwd)
+  #
+  rect(xleft=6.5308, ybottom=0, xright=6.4132, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[3],  border = col_vect2[3], lty=3, lwd=lwd)
+  ###
+  
+  
+  rect(xleft=3.3556, ybottom=0, xright=3.3164, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[4], border = col_vect2[4], lty=4, lwd=lwd)
+  rect(xleft=2.9636, ybottom=0, xright=2.9244, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[4], border = col_vect2[4], lty=4, lwd=lwd)
+  #
+  rect(xleft=2.7676, ybottom=0, xright=2.7284, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[5], border = col_vect2[5], lty=5, lwd=lwd)
+  rect(xleft=3.1988, ybottom=0, xright=3.0812, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[5], border = col_vect2[5], lty=5, lwd=lwd)
+  
+  rect(xleft=2.6108, ybottom=0, xright=2.4932, ytop=(max(x_raw)+5),
+       col = col_vect2_adj[6], border = col_vect2[6], lty=6, lwd=lwd)
+}
+  
+# png(file.path(out_path, "Stacked_spectra.png"),width = 1200, 
+#     height =700,pointsize = 30)
+
+ppm <- as.numeric(colnames(x_raw))
+par(mar= c(5,2,3,2), mfrow=c(1,1))
+plot(ppm, x_raw[1,], type="l", main = "Stacked semi-artificial spectra", 
+     sub=" Independent biomarkers by color", 
+     xlab = "ppm", ylab = "", 
+     ylim = c(min(x_raw),max(x_raw)+5),
+     xlim = rev(range(ppm)), col="gray50")
+
+legend("topright", legend = paste0("B", 1:6), col=col_vect2_adj,
+       pt.cex=2,  pch = 15, lty=1:6, lwd = 1.5)
+
+for (i in 2:dim(x_raw)[1]){
+  lines(ppm, x_raw[i,], col="gray50")
+}
+
+rect_Bexp_plot()
+
+# dev.off()
+
+
+par(mar= c(4,2,3,2), mfrow=c(1,1))
+colmeandiff <- colMeans(x_raw[y==1,])-colMeans(x_raw[y==0,])
+
+plot(ppm, colmeandiff, type="b", xlim = rev(range(ppm)), ylab = "",
+     main = "Intensity difference between classes", xlab="ppm")
+rect_Bexp_plot()
+
+
+par(mar= c(4,4,4,4), mfrow=c(1,1))
+
+```
+
+#### Generate simulated data
+
+```{r, eval = TRUE, comment=FALSE, results='hide'}
+
+
+# generate simulated data ##################
+
+set.seed(1)
+res_boot <- genData(y = y_raw, x = x_raw, nsimul = 50, 
+                    size = size_dt, seed = 1)
+
+res_boot <- mapply(create1Boot, y = res_boot$yy, x = res_boot$xx, 
+       MoreArgs = list(prop = 0.8), USE.NAMES = TRUE, SIMPLIFY = FALSE)
+  
+trainOut <- sapply(res_boot, function(x) x[["dftrain"]], simplify = FALSE)
+testOut <- sapply(res_boot, function(x) x[["dftest"]], simplify = FALSE)
+
+trainOutX <- sapply(trainOut, function(x) x$x, simplify = FALSE)
+trainOuty <- sapply(trainOut, function(x) x$y, simplify = FALSE)
+
+res_kfolds <- mapply(createKFolds, x = trainOutX, y = trainOuty, 
+                     MoreArgs = list(k = 10), 
+                     USE.NAMES = TRUE, SIMPLIFY = FALSE)
+
+trainIn <- sapply(res_kfolds, function(x) x[["dftrain"]], 
+                  simplify = FALSE)
+testIn <- sapply(res_kfolds, function(x) x[["dftest"]], 
+                 simplify = FALSE)
+
+all_subsamples <- list(trainOut=trainOut, testOut=testOut, 
+                       trainIn=trainIn, testIn=testIn,
+                       trainOutX=trainOutX, trainOuty=trainOuty)
+
+save(all_subsamples, file =file.path(out_path,paste0(size_dt, "all_subsamples.RData")))
+
+
+ppm_axis <- as.numeric(colnames(all_subsamples$trainOut[[1]]$x))
+
+```
+
+
+## Load the simulated subdatasets
+```{r loadData}
+
+load(file.path(out_path,paste0(size_dt, "all_subsamples.RData")))
+
+m <-  dim(rbind(all_subsamples$trainOut$Sim1$x,
+                all_subsamples$testOut$Sim1$x))[2]
+n <- dim(rbind(all_subsamples$trainOut$Sim1$x,
+               all_subsamples$testOut$Sim1$x))[1]
+```
+
+
+# Methods parameters
+
+```{r methodsparam}
+# PLS
+nLVmax = 15
+
+# OPLS
+nOcmax_opls = 14
+
+# SPLS
+eta_spls <- seq(0.05,0.95, 0.05)
+K_spls <- c(1:15)
+
+# LsOPLS
+eta_lsopls <- seq(0.05,0.95, 0.05)
+K_lsopls <- c(1)
+nOcmax_lsopls <- 14
+
+```
+
+# Loops
+
+
+## t-test
+
+```{r ttest, eval = TRUE}
+res_outerloop_ttest <- outerloop_ttest(all_subsamples)
+names(res_outerloop_ttest)
+
+save(res_outerloop_ttest, file=file.path(out_path, paste0(size_dt,"res_outerloop_ttest.RData")))
+```
+
+
+## PLS
+
+```{r pls, eval = TRUE}
+ptm <- proc.time()
+res_outerloop_PLS <- outerloop_PLS(all_subsamples = all_subsamples,
+                                   nLVmax = nLVmax)
+proc.time()-ptm
+names(res_outerloop_PLS)
+
+save(res_outerloop_PLS, file=file.path(out_path, paste0(size_dt,"res_outerloop_PLS.RData")))
+```
+
+
+## OPLS
+
+```{r opls, eval = TRUE}
+res_outerloop_OPLS <- outerloop_OPLS(all_subsamples = all_subsamples,
+                                     nOcmax = nOcmax_opls, mc.cores=3)
+names(res_outerloop_OPLS)
+
+save(res_outerloop_OPLS, file=file.path(out_path,
+                 paste0(size_dt,"res_outerloop_OPLS.RData")))
+```
+
+
+## SPLS
+
+<!-- ```{r clearall} -->
+<!-- ``` -->
+
+<!-- ```{r setup, include=FALSE}  -->
+<!-- ``` -->
+
+<!-- ```{r numsamp} -->
+<!-- ``` -->
+
+<!-- ```{r TBiom} -->
+<!-- ``` -->
+
+<!-- ```{r loadData} -->
+<!-- ``` -->
+
+<!-- ```{r methodsparam} -->
+<!-- ``` -->
+
+
+
+```{r spls2,eval  = TRUE}
+system.time(
+  res_outerloop_SPLS_allEta <- outerloop_SPLS_allEta(all_subsamples = 
+                     all_subsamples, eta =  eta_spls, 
+                     K = K_spls, mc.cores = 3)
+)
+names(res_outerloop_SPLS_allEta)
+save(res_outerloop_SPLS_allEta, file=file.path(out_path, paste0(size_dt,"res_outerloop_SPLS_allEta.RData")))
+
+```
+
+
+## LsOPLS
+
+
+```{r lsopls, eval=TRUE}
+system.time(
+  res_outerloop_LsOPLS_allEta <- outerloop_LsOPLS_allEta(all_subsamples =
+                         all_subsamples, 
+                         eta =  eta_lsopls, K =  K_lsopls, 
+                         nOmax = nOcmax_lsopls, mc.cores = 2)
+)
+ 
+names(res_outerloop_LsOPLS_allEta)
+save(res_outerloop_LsOPLS_allEta, 
+     file=file.path(out_path,
+             paste0(size_dt,"res_outerloop_LsOPLS_allEta.RData")))
+
+```
+
+
+# Load results and prepare the results outputs
+
+
+<!-- ```{r clearall} -->
+<!-- ``` -->
+
+<!-- ```{r setup, include=FALSE}  -->
+<!-- ``` -->
+
+<!-- ```{r numsamp} -->
+<!-- ``` -->
+
+<!-- ```{r TBiom} -->
+<!-- ``` -->
+
+<!-- ```{r loadData} -->
+<!-- ``` -->
+
+<!-- ```{r methodsparam} -->
+<!-- ``` -->
+
+<!-- ```{r numsamp} -->
+<!-- ``` -->
+
+
+
+```{r, eval=TRUE}
+Rdata.path <- c(paste0(size_dt,"res_outerloop_ttest.RData"),  
+                paste0(size_dt, "res_outerloop_PLS.RData"), 
+                paste0(size_dt, "res_outerloop_OPLS.RData"),
+                paste0(size_dt, "res_outerloop_SPLS_allEta.RData"),
+                paste0(size_dt, "res_outerloop_LsOPLS_allEta.RData"))
+
+
+# simulresults
+# RMSE_res
+Rdata.path <- paste0(out_path, "/", Rdata.path)
+for (i in Rdata.path){
+  load(i)
+}
+
+```
+
+
+
+# Ranking and selection methods
+
+
+```{r}
+names(res_outerloop_ttest$ranked_B_all) <- "t-stat"
+names(res_outerloop_ttest$selection$ranked_B_all) <- "t-fdr"
+names(res_outerloop_ttest$rank_B_all) <- "t-stat"
+names(res_outerloop_ttest$selection$rank_B_all) <- "t-fdr"
+
+names(res_outerloop_PLS$ranked_B_all) <- c("PLS-coef", "PLS-vip", "PLS-vip1")
+names(res_outerloop_OPLS$ranked_B_all) <- c("OPLS-coef","OPLS-vip",
+                                            "OPLS-vip1")
+
+names(res_outerloop_PLS$rank_B_all) <- c("PLS-coef", 
+                                         "PLS-vip", "PLS-vip1")
+names(res_outerloop_OPLS$rank_B_all) <- c("OPLS-coef",
+                                          "OPLS-vip", "OPLS-vip1")
+
+names(res_outerloop_SPLS_allEta$best$ranked_B_all) <- "SPLS-coef"
+names(res_outerloop_SPLS_allEta$best$rank_B_all) <- "SPLS-coef"
+
+names(res_outerloop_LsOPLS_allEta$best$ranked_B_all) <- "LsOPLS-coef"
+names(res_outerloop_LsOPLS_allEta$best$rank_B_all) <- "LsOPLS-coef"
+
+# res_outerloop for prediction accuracy
+res_outerloop_Pred <- list(PLS=res_outerloop_PLS,
+                           OPLS=res_outerloop_OPLS, 
+                           SPLS = res_outerloop_SPLS_allEta$best,
+                           LsOPLS = res_outerloop_LsOPLS_allEta$best)
+
+
+# Ranking methods ==================
+ranked_B_rank<- c(res_outerloop_ttest$ranked_B_all, 
+                  res_outerloop_PLS$ranked_B_all[c(1,2)],
+                  res_outerloop_OPLS$ranked_B_all[c(1,2)])
+
+rank_B_rank <- c(res_outerloop_ttest$rank_B_all, 
+                 res_outerloop_PLS$rank_B_all[c(1,2)],
+                 res_outerloop_OPLS$rank_B_all[c(1,2)])
+
+nRankMeth <- length(ranked_B_rank) # number of ranking methods
+rankMeth <- names(ranked_B_rank) # names of ranking methods
+
+pander("Ranking methods")
+pander(paste(rankMeth, collapse = " / "))
+
+
+# Selection methods ==================
+
+## Selection methods with the best eta values
+ranked_B_sel <- c(res_outerloop_ttest$selection$ranked_B_all,
+                  res_outerloop_PLS$ranked_B_all["PLS-vip1"],
+                  res_outerloop_OPLS$ranked_B_all["OPLS-vip1"],
+                  res_outerloop_SPLS_allEta$best$ranked_B_all,
+                  res_outerloop_LsOPLS_allEta$best$ranked_B_all)
+
+
+rank_B_sel <- c(res_outerloop_ttest$selection$rank_B_all,
+                res_outerloop_PLS$rank_B_all["PLS-vip1"],
+                res_outerloop_OPLS$rank_B_all["OPLS-vip1"],
+                res_outerloop_SPLS_allEta$best$rank_B_all,
+                res_outerloop_LsOPLS_allEta$best$rank_B_all)
+
+
+nSelMeth <- length(ranked_B_sel) # number of selection methods
+selMeth <- names(ranked_B_sel) # names of selection methods
+
+pander("Selection methods")
+pander(paste(selMeth, collapse = " / "))
+
+
+## Selection methods with all the eta values
+ranked_B_sel_allEta <- c(res_outerloop_SPLS_allEta$ranked_B_all,
+                         res_outerloop_LsOPLS_allEta$ranked_B_all)
+
+rank_B_sel_allEta <- c(res_outerloop_SPLS_allEta$rank_B_all,
+                       res_outerloop_LsOPLS_allEta$rank_B_all)
+
+
+rank_B_all <- c(rank_B_rank, rank_B_sel)
+``` 
+
+
+# A. ROC analysis for Features accuracy
+
+## ROC space
+```{r, eval=TRUE}
+# png(file.path(out_path, "ROC_space.png"), width=750,
+#     pointsize=23, height = 700)
+mat <- rbind(A=c(0.08, 0.61), B = c(0.4, .78), C = c(0.76, 0.76), D = c(0,1), E =c(0.6, 0.2))
+colnames(mat)<-c("x", "y")  
+plot(c(-0.1,1.1), c(-0.1,1.1), xlim=c(0,1), ylim=c(0,1), type="l", lty=3,
+     ylab = "Sensitivity", xlab = "FDR")
+points(mat[,"x"], mat[,"y"], pch=15)
+text(mat[,"x"], mat[,"y"], labels = rownames(mat), pos = 1)
+# dev.off()
+
+# knitr::include_graphics(file.path(out_path, "ROC_space.png"))
+```
+
+
+ROC analysis for Features accuracy:
+  
+  
+```{r}
+res_Constr_ROC_allRanks <- sapply(ranked_B_rank, 
+                                  function(x) 
+                                    sapply(1:m, Constr_ROC_feat_rank, 
+                                           ranked_B = x,Bexp = Bexp, 
+                                           simplify = FALSE),
+                                  simplify = FALSE)
+
+mean_sensit <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["msensit"]]), simplify=TRUE)
+
+mean_fdr <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["mfdr"]]), simplify=TRUE)
+
+mean_precision <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["mprecision"]]), simplify=TRUE)
+
+mean_fdr <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["mfdr"]]), simplify=TRUE)
+
+mean_ppv <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["mppv"]]), simplify=TRUE)
+
+mean_F1 <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["mF1"]]), simplify=TRUE)
+
+for (i in 1:ncol(mean_F1)){
+  mean_F1[is.na(mean_F1[,i]),i]=0
+}
+
+sd_sensit <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["sdsensit"]]), simplify=TRUE)
+
+sd_fdr <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["sdfdr"]]), simplify=TRUE)
+
+sd_precision <- sapply(res_Constr_ROC_allRanks, function(x) 
+  sapply(x, function(a) a[["sdprecision"]]), simplify=TRUE)
+
+```
+
+
+## VIP > 1
+```{r}
+# VIP for PLS
+VIP_sup1_PLS <- sapply(1:dim(rank_B_rank$`PLS-vip`)[1], 
+                       function(x) which(rank_B_rank$`PLS-vip`[x,] >=1), 
+                       simplify=FALSE, USE.NAMES = TRUE)
+
+meanNbiom_PLS <- floor(mean(sapply(VIP_sup1_PLS, length)))
+
+# VIP for OPLS
+VIP_sup1_OPLS <- sapply(1:dim(rank_B_rank$`OPLS-vip`)[1], 
+                        function(x) which(rank_B_rank$`OPLS-vip`[x,] >=1), 
+                        simplify=FALSE, USE.NAMES = TRUE)
+
+meanNbiom_OPLS <- floor(mean(sapply(VIP_sup1_OPLS, length)))
+```
+
+
+## ROC curves
+
+### Ranked methods
+
+#### ROC curves
+```{r}
+# metrics at best threshold
+id_opt <- c()
+AUC <- c()
+sensit_opt <- c()
+fdr_opt <- c()
+ppv_opt <- c()
+F1_opt <- c()
+
+
+for (i in 1:nRankMeth){
+  fdr <- mean_fdr[,i]
+  sens <- mean_sensit[,i]
+  id_opt[i] <- ROC_dist_fun(x=fdr,y=sens) 
+  
+  AUC[i] <- round(AUC_fun(TPR = sens, FPR = fdr),3)
+  
+  fdr_opt[i] <- round(mean_fdr[id_opt[i],i],3)
+  sensit_opt[i] <- round(mean_sensit[id_opt[i],i],3)
+  
+  ppv_opt[i] <- round(mean_ppv[id_opt[i],i],3)
+  F1_opt[i] <- round(mean_F1[id_opt[i],i],3)
+}
+names(id_opt) <- names(AUC) <- names(sensit_opt) <- names(fdr_opt) <- names(ppv_opt) <- names(F1_opt) <- rankMeth
+
+sensit_opt_rank <- sensit_opt
+pander("Mean sensitivity at optimal threshold for ranking methods")
+pander(sensit_opt_rank)
+
+fdr_opt_rank <- fdr_opt
+pander("Mean fdr at optimal threshold for ranking methods")
+pander(fdr_opt_rank)
+
+indices_opt_rank <- cbind(sensit_opt, fdr_opt, ppv_opt, F1_opt)
+pander(indices_opt_rank)
+
+# ROC curve with mean sensitivity and fdr
+###########################################
+
+# png(file.path(out_path, paste0(size_dt,"ROC_ranking.png")),
+#     width=900,pointsize=23, height = 900)
+par(mfrow=c(1,1), mar=c(4,4,3,2))
+
+col <- col_vect3
+dx=dy=seq(0,1,0.01)
+plot(mean_fdr[,1], mean_sensit[,1], xlim=c(0,1), ylim=c(0,1), 
+     pch=1, type="b", col=col[1], cex=0.7,
+     xlab="FDR", main=paste("ROC curves",  "\n Variyng parameter: m*"),
+     ylab="Sensitivity")
+
+for (i in 2:nRankMeth){
+  lines(mean_fdr[,i], mean_sensit[,i], xlim=c(0,1), ylim=c(0,1),
+        pch=(i), type="b", col=col[i],cex=0.7)
+}
+
+points(mean_fdr[id_opt[1],1], mean_sensit[id_opt[1],1], lwd=2, 
+       col = 1,cex=1.5, pch=23, bg="red")
+text(mean_fdr[id_opt[1],1], mean_sensit[id_opt[1],1],
+     labels = paste0(id_opt[1]), pos = 3, font=2)
+lines(c(0,mean_fdr[id_opt[1],1]), c(1,mean_sensit[id_opt[1],1]), 
+      lty=3, col="black")
+
+pos <- c(4,2,1,4)
+for (i in 2:nRankMeth){
+  points(mean_fdr[id_opt[i],i], mean_sensit[id_opt[i],i], lwd=2, 
+         pch=23, bg="red", cex=1.5, col = 1)
+  text(mean_fdr[id_opt[i],i], mean_sensit[id_opt[i],i],
+       labels = paste0(id_opt[i]), pos = pos[i-1], cex=1, font=2)
+  lines(c(0,mean_fdr[id_opt[i],i]), c(1,mean_sensit[id_opt[i],i]),
+        lty=3, col="black")
+}
+
+lines(dx,dy, lty=3)
+
+text(1-0.3, 0.5, 
+     labels = paste0("AUC:\n",paste0(AUC, " (",rankMeth,") \n",
+       collapse=""), collapse=""), pos = 4)
+
+# VIP with 1 as threshold
+## PLS
+points(mean_fdr[meanNbiom_PLS,"PLS-vip"], mean_sensit[meanNbiom_PLS,"PLS-vip"], lwd=2, 
+       cex=1.5, pch=23, bg="blue", col = "black")
+text(mean_fdr[meanNbiom_PLS,"PLS-vip"], mean_sensit[meanNbiom_PLS,"PLS-vip"],
+     labels = paste0(meanNbiom_PLS), pos = 3, col="black")
+
+## OPLS
+points(mean_fdr[meanNbiom_OPLS,"OPLS-vip"], mean_sensit[meanNbiom_OPLS,"OPLS-vip"],
+       lwd=2,  cex=1.5, pch=23, bg="blue", col = "black")
+text(mean_fdr[meanNbiom_OPLS,"OPLS-vip"], mean_sensit[meanNbiom_OPLS,"OPLS-vip"],
+     labels = paste0(meanNbiom_OPLS), pos = 2, col="black")
+
+# legend
+legend("bottomright", legend = c(rankMeth, "Opt. thres." , "vip > 1"), 
+       col = c(col[1:nRankMeth], "black", "black"), pch = c(1:nRankMeth,23,23), 
+       pt.bg =c(rep(NA, nRankMeth),"red", "blue"), title=NULL)
+
+# dev.off()
+
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"ROC_ranking.png")))
+```
+
+
+#### Plot of sd 
+
+```{r, eval=TRUE}
+# png(file.path(out_path, paste0(size_dt,"ROC_ranking_sd.png")), width=1200,
+#     pointsize=23, height = 700)
+par(mfrow=c(2,3), mar=c(4,4,1,1))
+
+# sd_sensit ----------
+metric <- sd_sensit
+xlength <- length(metric[,1])
+xax <- 1:xlength
+
+col <- col_vect
+plot(xax, metric[1:xlength,1], ylim = range(metric), 
+     ylab = "sd(sensit)", xlab = "n biom", col = col[1], pch = 1, type="b")
+for (i in 2:dim(metric)[2]){
+  points(1:xlength, metric[1:xlength,i], col = col[i], pch = i, type="b")
+}
+# legend("topright", legend = rankMeth,  bty = "n", col = col[1:nRankMeth],pch = 1:nRankMeth, y.intersp = 0.7)
+
+# sd_fdr ----------
+metric <- sd_fdr
+xlength <- length(metric[,1])
+xax <- 1:xlength
+
+plot(xax, metric[1:xlength,1], ylim = range(metric), 
+     ylab = "sd(fdr)", xlab = "n biom", col = col[1], pch = 1, type="b")
+for (i in 2:dim(metric)[2]){
+  points(1:xlength, metric[1:xlength,i], col = col[i], pch = i, type="b")
+}
+# legend("topright", legend = rankMeth,  bty = "n", col = col[1:nRankMeth],pch = 1:nRankMeth, y.intersp = 0.7)
+
+
+
+# sd_precision ----------
+metric <- sd_precision
+xlength <- length(metric[,1])
+xax <- 1:xlength
+plot(xax, metric[1:xlength,1], ylim = range(metric), 
+     ylab = "sd(precision)", xlab = "n biom", col = col[1], pch = 1, type="b")
+for (i in 2:dim(metric)[2]){
+  points(1:xlength, metric[1:xlength,i], col = col[i], pch = i, type="b")
+}
+legend("topright", legend = rankMeth,  bty = "n", col = col[1:nRankMeth],pch = 1:nRankMeth, y.intersp = 0.7)
+
+
+########## Zoom
+
+# sd_sensit ----------
+metric <- sd_sensit
+xlength <- length(Bexp)
+xax <- 1:xlength
+plot(xax, metric[1:xlength,1], ylim = range(metric),
+     ylab = "sd(sensit)", xlab = "n biom", col = col[1], pch = 1, type="b")
+for (i in 2:dim(metric)[2]){
+  points(1:xlength, metric[1:xlength,i], col = col[i], pch = i, type="b")
+}
+# legend("topleft", legend = rankMeth,  bty = "n", col = col[1:nRankMeth],pch = 1:nRankMeth, y.intersp = 0.7)
+
+# sd_fdr ----------
+metric <- sd_fdr
+xlength <- length(Bexp)
+xax <- 1:xlength
+plot(xax, metric[1:xlength,1], ylim = range(metric), 
+     ylab = "sd(fdr)", xlab = "n biom", col = col[1], pch = 1, type="b")
+for (i in 2:dim(metric)[2]){
+  points(1:xlength, metric[1:xlength,i], col = col[i], pch = i, type="b")
+}
+# legend("topright", legend = rankMeth,  bty = "n", col = col[1:nRankMeth],pch = 1:nRankMeth, y.intersp = 0.7)
+
+
+
+# sd_precision ----------
+metric <- sd_precision
+xlength <- length(Bexp)
+xax <- 1:xlength
+plot(xax, metric[1:xlength,1], ylim = range(metric), 
+     ylab = "sd(precision)", xlab = "n biom", col = col[1], pch = 1, type="b")
+for (i in 2:dim(metric)[2]){
+  points(1:xlength, metric[1:xlength,i], col = col[i], pch = i, type="b")
+}
+# legend("topright", legend = rankMeth,  bty = "n", col = col[1:nRankMeth],pch = 1:nRankMeth, y.intersp = 0.7)
+
+# dev.off()
+
+# knitr::include_graphics(file.path(out_path,
+# paste0(size_dt,"ROC_ranking_sd.png")))
+```
+
+### Selection methods
+
+```{r}
+res_Constr_ROC_allsel <- sapply(ranked_B_sel_allEta, 
+                     function(x) sapply(x, 
+                                        Constr_ROC_feat_sel, 
+                                         Bexp = Bexp, 
+                                         simplify = TRUE),
+                                simplify = FALSE)
+
+mean_sensit <- sapply(res_Constr_ROC_allsel, function(a) a["msensit",], simplify=TRUE)
+
+mean_fdr <- sapply(res_Constr_ROC_allsel, function(a) a["mfdr",], simplify=TRUE)
+
+mean_precision <- sapply(res_Constr_ROC_allsel, function(a) a["mprecision",], simplify=TRUE)
+
+mean_ppv <- sapply(res_Constr_ROC_allsel, function(a) a["mppv",], simplify=TRUE)
+
+mean_F1 <- sapply(res_Constr_ROC_allsel, function(a) a["mF1",], simplify=TRUE)
+
+sd_sensit <- sapply(res_Constr_ROC_allsel, function(a) a["sdsensit",], simplify=TRUE)
+
+sd_fdr <- sapply(res_Constr_ROC_allsel, function(a) a["sdfdr",], simplify=TRUE)
+
+sd_precision <- sapply(res_Constr_ROC_allsel, function(a) a["sdprecision",], simplify=TRUE)
+
+
+
+```
+
+#### ROC curve
+```{r}
+
+# metrics at best threshold #############
+id_opt <- c()
+# AUC <- c()
+sensit_opt <- c()
+fdr_opt <- c()
+etaOpt <- c()
+eta_all <- vector(mode="list")
+ppv_opt <- c()
+F1_opt <- c()
+
+for (i in 1:(nSelMeth-3)){
+  fdr <- as.numeric(mean_fdr[,i])
+  sens <- as.numeric(mean_sensit[,i])
+  id_opt[i] <- ROC_dist_fun(x=fdr,y=sens) 
+  
+  # AUC[i] <- round(AUC_fun(TPR = sens, FPR = fdr),3)
+  
+  fdr_opt[i] <- round(as.numeric(mean_fdr[id_opt[i],i]),3)
+  sensit_opt[i] <- round(as.numeric(mean_sensit[id_opt[i],i]),3)
+  
+  # etaOpt
+  eta_all[[i]] <- as.numeric(gsub("eta", "", colnames(res_Constr_ROC_allsel[[i]])))
+  etaOpt[i] <- as.numeric(gsub("eta", "", colnames(res_Constr_ROC_allsel[[i]])))[id_opt[i]]
+  ppv_opt[i] <- round(as.numeric(mean_ppv[id_opt[i],i]),3)
+  F1_opt[i] <- round(as.numeric(mean_F1[id_opt[i],i]),3)
+  
+}
+names(id_opt) <- names(sensit_opt) <- names(fdr_opt) <- names(etaOpt) <- names(ppv_opt) <- names(F1_opt) <- selMeth[-c(1,2,3)]
+
+
+sensit_opt_sel <- sensit_opt
+pander("Mean sensitivity at optimal threshold for selection methods")
+pander(sensit_opt_sel)
+
+fdr_opt_sel <- fdr_opt
+pander("Mean fdr at optimal threshold for selection methods")
+pander(fdr_opt_sel)
+
+pander("Mean eta param at optimal threshold for selection methods")
+pander(etaOpt)
+
+indices_opt_sel <- cbind(sensit_opt, fdr_opt, ppv_opt, F1_opt)
+pander(indices_opt_sel)
+
+
+```
+
+
+```{r}
+
+# ROC curve with mean sensitivity and fdr
+###########################################
+# png(file.path(out_path, paste0(size_dt,"ROC_selection.png")),
+#     width=900,
+#     pointsize=23, height = 900)
+
+par(mfrow=c(1,1), mar=c(4,4,3,2))
+
+dx=dy=seq(0,1,0.01)
+plot(mean_fdr[,1], mean_sensit[,1], xlim=c(0,1), ylim=c(0,1), col=col[1], pch=1, type="b",  cex=0.7,
+     xlab="FDR", main=paste("ROC curves", "\n Varying parameter: eta"),
+     ylab="Sensitivity")
+
+
+for (i in 2:(nSelMeth-3)){
+  lines(mean_fdr[,i], mean_sensit[,i], xlim=c(0,1), ylim=c(0,1), pch=(i), type="b", col=col[i], cex=0.7)
+}
+
+points(mean_fdr[id_opt[1],1], mean_sensit[id_opt[1],1], lwd=2, 
+       col = 1,cex=1.5, pch=23, bg="red")
+
+text(mean_fdr[id_opt[1],1], mean_sensit[id_opt[1],1], 
+     labels = paste0(etaOpt[1]), pos = 3, font=2)
+lines(c(0,mean_fdr[id_opt[1],1]), c(1,mean_sensit[id_opt[1],1]), lty=3, col="black")
+
+id <- which(eta_spls %in% seq(0.1,0.9,0.1))
+text(mean_fdr[id,1], mean_sensit[id,1], 
+     labels = paste0(eta_all[[i]][id]), pos = 1, cex = 0.7)
+
+for (i in 2:(nSelMeth-3)){
+  
+  id <- which(eta_lsopls %in% seq(0.1,0.9,0.1))
+  text(mean_fdr[id,i], mean_sensit[id,i], 
+       labels = paste0(eta_all[[i]][id]), pos = 1, cex = 0.7)
+  
+  points(mean_fdr[id_opt[i],i], mean_sensit[id_opt[i],i], lwd=2,
+         pch=23, bg="red", cex=1.5, col = 1)
+  text(mean_fdr[id_opt[i],i], mean_sensit[id_opt[i],i],
+       labels = paste0(etaOpt[i]), pos = 3, font=2)
+  lines(c(0,mean_fdr[id_opt[i],i]), c(1,mean_sensit[id_opt[i],i]), lty=3, col="black")
+}
+
+lines(dx,dy, lty=3)
+
+# legend
+legend("bottomright", legend = c(selMeth[-c(1,2,3)], "Opt. eta"), 
+       col = c(col[1:(nSelMeth-3)], "black"), pch = c(1:(nSelMeth-1),23), 
+       pt.bg =c(rep(NA, (nSelMeth-3)),"red"), title = NULL)
+
+# dev.off()
+
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"ROC_selection.png")))
+```
+
+
+#### Plot of sd 
+
+```{r}
+# png(file.path(out_path, paste0(size_dt,"ROC_selection_sd.png")),
+#     width=1200,pointsize=23, height = 400)
+par(mfrow=c(1,3), mar=c(4,4,1,1))
+
+# sd_sensit --------
+metric <- sd_sensit
+xax <- as.numeric(gsub("eta","", rownames(metric)))
+plot(xax, metric[,1], ylim = range(metric), 
+     ylab = "sd(sensit)", xlab = "eta", col = col[1], pch = 1, type="b")
+# legend("topright", legend = selMeth[-1], col = col[1:(nSelMeth-1)],pch = 1:(nSelMeth-1), y.intersp = 0.7)
+
+for (i in 1:dim(metric)[2]){
+  lines(xax, metric[,i], ylim = range(metric), 
+        ylab = "sd(sensit)", xlab = "eta", col = col[i], pch = i, type="b")
+}
+
+
+# sd_fdr --------
+metric <- sd_fdr
+xax <- as.numeric(gsub("eta","", rownames(metric)))
+plot(xax, metric[,1], ylim = range(metric),  
+     ylab = "sd(fdr)", xlab = "eta", col = col[1], pch = 1, type="b")
+
+
+for (i in 1:dim(metric)[2]){
+  lines(xax, metric[,i], ylim = range(metric), 
+        ylab = "sd(sensit)", xlab = "eta", col = col[i], pch = i, type="b")
+}
+
+
+# sd_precision --------
+metric <- sd_precision
+xax <- as.numeric(gsub("eta","", rownames(metric)))
+plot(xax, metric[,1], ylim = range(metric),  
+     ylab = "sd(fdr)", xlab = "eta", col = col[1], pch = 1, type="b")
+
+for (i in 1:dim(metric)[2]){
+  lines(xax, metric[,i], ylim = range(metric), 
+        ylab = "sd(sensit)", xlab = "eta", col = col[i], pch = i, type="b")
+}
+
+legend("bottomleft", legend = selMeth[-1],  bty = "n", col = col[1:(nSelMeth-1)],pch = 1:(nSelMeth-1), y.intersp = 0.7)
+
+
+# dev.off()
+
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"ROC_selection_sd.png")))
+```
+
+### Average FDR and sensitivity
+
+```{r}
+# Selection methods
+# Selection methods: Average FDR
+Av_fdr <- sapply(ranked_B_sel, function(x) mean(sapply(x, function(a) 
+                      1- sum(a%in%Bexp)/length(a)), na.rm = TRUE))*100
+
+# Selection methods: Average sensitivity
+Av_sensit <- sapply(ranked_B_sel, function(x) 
+             mean(sapply(x, function(a) sum(a%in%Bexp)/length(Bexp)), 
+                  na.rm = TRUE))*100
+
+
+Av_ppv <- 100 - Av_fdr
+Av_F1 <- 2*((Av_ppv*Av_sensit)/(Av_ppv+Av_sensit))
+  
+
+res <- cbind(Av_sensit, Av_fdr, Av_ppv,Av_F1)
+pander("Average FDR and sensitivity for selection sets")
+pander(res)
+colnames(res) <- c("Sensitivity","FDR","PPV","F1")
+# write.csv(round(res,2), 
+#           file = file.path(out_path,paste0(size_dt, "sensitfdr_selsets.csv")))
+
+```
+
+
+## Compare sensit and fdr for all the methods
+
+```{r}
+pander("ROC indices at best threshold")
+colnames(res) <- c("Sensitivity","FDR","PPV","F1")
+res <- rbind(indices_opt_rank, indices_opt_sel)
+
+pander(res)
+
+# write.csv(round(res,2), 
+#           file = file.path(out_path, paste0(size_dt, "sensitfdr_bestthresh.csv")))
+
+```
+
+
+# B. Visual descriptors identification (results Memoire)
+
+Features accuracy with graphics
+
+
+## Average percentage of total correct identification for nbiom = half n biom true
+(Table 5.3)
+```{r}
+# Ranking methods
+nfeat <- length(Bexp)
+
+pander("Ranking methods: Average FDR for nbiom = n biom true")
+t <- sapply(ranked_B_rank, function(b) {
+  mean(1- colSums(apply(b[1:nfeat,], 2, function(a) a%in%Bexp))/nfeat)*100
+})
+pander(t)
+
+pander("Ranking methods: Average sensitivity nbiom = n biom true")
+t <- sapply(ranked_B_rank, function(b) {
+  mean(colSums(apply(b[1:nfeat,], 2, function(a)
+    a%in%Bexp))/length(Bexp))*100
+})
+
+pander(t)
+
+```
+
+## Frequencies of selected features for the 1:th ranked features
+
+```{r, fig.height=20}
+# # Ranking methods: Frequencies of selected features for the 1:th ranked features
+nfeat <- length(Bexp)
+
+# png(file.path(out_path, paste0(size_dt,"FreqSelFeat.png")), width=2000,
+#     pointsize=43, height = 3360)
+par(mfrow=c((length(rank_B_rank)+length(rank_B_sel)),1), 
+    mar = c(2,2,3,2))
+
+for (i in 1:length(rank_B_rank)){
+  plot(0,type='n', xlim=c(0,500), 
+       ylim = c(0,(dim(rank_B_rank[[i]])[1]+2)), 
+       main = names(rank_B_rank)[i], cex.main = 1.5)
+  abline(v = Bexp, lty = 2, col="gray70")
+  lines(table(ranked_B_rank[[i]][1:nfeat,]), type="h")
+  
+}
+
+# Selection methods
+# Frequencies of selected features for the selected features
+
+for (i in 1:length(rank_B_sel)){
+  plot(0,type='n', xlim=c(0,500), 
+       ylim = c(0,(dim(rank_B_sel[[i]])[1]+2)), 
+       main = names(rank_B_sel)[i], cex.main = 1.5)
+  abline(v = Bexp, lty = 2, col="gray70")
+  lines(table(unlist(ranked_B_sel[[i]])), type="h")
+}
+
+
+# dev.off()
+par(mfrow=c(1,1))
+
+pander("Number of selected features for selection methods")
+Num_sel_feat_sel <- sapply(ranked_B_sel, function(x) sapply(x, length))
+
+
+```
+
+```{r}
+# png(file.path(out_path, paste0(size_dt,"boxplot_numselfeat_selection.png")),
+#     width=1000,
+#     pointsize=30, height = 1000)
+
+boxplot(Num_sel_feat_sel, 
+        main="Number of selected features with automatic threshold methods")
+res <- apply(Num_sel_feat_sel,2,median)
+xx <- seq(1.5,3.5,1)
+text(y=res, x=xx, labels = res, cex = 0.9, col = "blue")
+# dev.off()
+
+pander(summary(Num_sel_feat_sel))
+```
+
+
+```{r}
+df <- melt(t(Num_sel_feat_sel))
+names(df)[1] <- "Method"
+
+p <- ggplot(df, aes(x=Method, y=value, color=Method)) +
+  geom_boxplot()
+
+
+p <- p + scale_color_manual(values=col_vect3)+
+  ggtitle("Number of selected features with automatic threshold methods") + 
+  ylab("Number of selected features")
+
+p
+# ggsave(paste0(size_dt,"boxplot_numselfeat_selection.png"), plot = p, width = 20, height = 10, units = "cm", path = out_path)
+```
+
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"FreqSelFeat.png")))
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"boxplot_numselfeat_selection.png")))
+```
+
+
+## Number of correct identifications per method
+
+
+```{r}
+dev.off()
+nfeat <- length(Bexp)
+
+# frequencies_rank
+frequencies_rank <- sapply(ranked_B_rank, function(b) {
+  colSums(apply(b[1:nfeat,], 2, function(a) a%in%Bexp))
+})
+
+# frequencies_sel
+frequencies_sel <- sapply(ranked_B_sel, function(x) sapply(x, function(a) sum(a%in%Bexp)))
+
+frequencies <- cbind(frequencies_rank,frequencies_sel)
+
+# png(file.path(out_path, paste0(size_dt,"FreqCorrectID.png")), width=2000,
+#     pointsize=55, height = 4000)
+
+ylim <-  c(0,max(unlist(apply(frequencies,2,table))))
+par(mfrow=c(ncol(frequencies),1), mar = c(2,2,3,2))
+for (i in 1:ncol(frequencies)){
+  plot(table(frequencies[,i]), ylim = ylim, xlim = c(1,nfeat), 
+       main =paste0("Number of correct identifications per method", " \n", colnames(frequencies)[i]))
+}
+
+# dev.off()
+
+```
+
+
+```{r}
+### boxplot
+
+df <- melt(t(frequencies[,1:5]))
+names(df)[1] <- "Method"
+p_man <- ggplot(df, aes(x=Method, y=value, color=Method)) +
+  geom_boxplot()+
+  ggtitle("Number of correct identifications \n m* = 46") +
+  ylab("Number") + ylim(0,46) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_man
+
+df <- melt(t(frequencies[,6:10]))
+names(df)[1] <- "Method"
+p_auto <- ggplot(df, aes(x=Method, y=value, color=Method)) +
+  geom_boxplot()+
+  ggtitle("Number of correct identifications \n m* set automatically") +
+  ylab("Number")+ ylim(0,46) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+p_auto
+
+p <- plot_grid(p_man, p_auto, nrow = 1, rel_widths  = c(5/10,5/10))
+
+# ggsave(paste0(size_dt,"FreqCorrectID.png"), width = 20, height = 7, 
+#        units = "cm", path = out_path, scale = 1.2)
+
+```
+
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"FreqCorrectID.png")))
+```
+
+
+## Mean descriptors ranks
+
+```{r, fig.height=20}
+mean_ranks <- sapply(rank_B_all, colMeans)
+
+rownames(mean_ranks) <- ppm_axis
+mr <- as.data.frame(mean_ranks)
+
+# t-stat ==================
+
+dttest <- matrix(0, ncol = m, nrow = size_dt)
+for (i in 1:length(ranked_B_sel$`t-fdr`)){
+  dttest[i,ranked_B_sel$`t-fdr`[[i]]] <-
+    rank_B_all$`t-stat`[i,ranked_B_sel$`t-fdr`[[i]]]
+}
+
+df <- data.frame("t-stat (m*=46)" = mr$`t-stat`, "t-fdr" = colMeans(dttest), check.names = FALSE)
+# df <- data.frame("t-stat (m*=46)" = mr$`t-stat`, check.names = FALSE)
+rownames(df) <- ppm_axis
+
+df <- melt(t(df) , value.name = "meanrank")
+names(df)[1] <- "method"
+names(df)[2] <- "ppm"
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=meanrank))+ 
+  geom_vline(xintercept = ppm_axis[Bexp],
+             linetype="dotted", color = "gray80", size=0.6)+
+  geom_segment()
+p <- p + facet_grid(rows = "method", scales = "free_y")
+
+p <- p +
+  xlab("ppm") +
+  ylab("Mean score") + scale_x_reverse() + ggtitle("t-stat")
+
+p <- p + theme(
+      strip.text.y = element_text(
+        size = 9, color = "white", face = "bold"
+        ),
+      strip.background = element_rect(
+     color="black", fill="black", size=3, linetype="solid"
+     )
+      )+
+  theme(panel.background =
+          element_rect(fill = 'gray95', colour = 'white'))
+
+mstar_tstat <- sort(abs(mr$`t-stat`), decreasing = TRUE)[46]
+mstar_tstat <- c(-mstar_tstat,mstar_tstat)
+
+# tstat
+p <- p +
+geom_hline(data = data.frame(yint=mstar_tstat,method="t-stat (m*=46)"), 
+           aes(yintercept = yint), linetype = "dotted", colour="blue")
+
+p_stat <- p
+
+
+# coeff methods ==================
+df  <- data.frame("PLS-coef (m*=46)" = mean_ranks[,"PLS-coef"],
+                  "OPLS-coef (m*=46)" = mean_ranks[,"OPLS-coef"], 
+                  "SPLS-coef"= mean_ranks[,"SPLS-coef"], 
+                  "LsOPLS-coef"= mean_ranks[,"LsOPLS-coef"], 
+                  check.names = FALSE)
+df <- melt(t(df), 
+           value.name = "meanrank")
+names(df)[1] <- "method"
+names(df)[2] <- "ppm"
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=meanrank))+ 
+  geom_vline(xintercept = ppm_axis[Bexp],
+             linetype="dotted", color = "gray80", size=0.6)+
+  geom_segment()
+p <- p + facet_grid(rows = "method", scales = "fixed")
+p <- p + 
+  xlab("ppm") +
+  ylab("Mean score") + scale_x_reverse() + ggtitle("Coefficients methods")
+
+p <- p +theme(
+      strip.text.y = element_text(
+        size = 8.5, color = "black", face = "bold"
+        ),
+      strip.background = element_rect(
+     color="white", fill="white", size=3, linetype="solid"
+     )
+      )+
+  theme(panel.background = 
+          element_rect(fill = 'gray95', colour = 'white'))
+
+
+  mstar <- sort(abs(mr$`PLS-coef`), decreasing = TRUE)[46]
+  mstar <- c(-mstar,mstar)
+
+  p <- p +
+  geom_hline(data = data.frame(yint=mstar,method="PLS-coef (m*=46)"), 
+           aes(yintercept = yint), linetype = "dotted", colour="blue")
+  
+  mstar <- sort(abs(mr$`OPLS-coef`), decreasing = TRUE)[46]
+  mstar <- c(-mstar,mstar)
+
+  p <- p +
+  geom_hline(data = data.frame(yint=mstar,method="OPLS-coef (m*=46)"), 
+           aes(yintercept = yint), linetype = "dotted", colour="blue")
+
+
+p_coef <- p
+
+
+
+# VIP methods ==================
+pls_vip1 <- matrix(NA, ncol = m, nrow = size_dt)
+for (i in 1:length(ranked_B_sel$`PLS-vip1`)){
+  pls_vip1[i,ranked_B_sel$`PLS-vip1`[[i]]] <-
+    rank_B_all$`PLS-vip1`[i,ranked_B_sel$`PLS-vip1`[[i]]]
+}
+
+opls_vip1 <- matrix(NA, ncol = m, nrow = size_dt)
+for (i in 1:length(ranked_B_sel$`OPLS-vip1`)){
+  opls_vip1[i,ranked_B_sel$`OPLS-vip1`[[i]]] <-
+    rank_B_all$`OPLS-vip1`[i,ranked_B_sel$`OPLS-vip1`[[i]]]
+}
+
+
+
+df <- data.frame("PLS-vip (vip>=1)" = mean_ranks[,c("PLS-vip")],
+                 "OPLS-vip (vip>=1)" = mean_ranks[,c( "OPLS-vip")],
+                 check.names = FALSE)
+
+rownames(df) <- ppm_axis
+
+df <- melt(t(df), 
+           value.name = "meanrank")
+names(df)[1] <- "method"
+names(df)[2] <- "ppm"
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=meanrank))+ 
+  geom_vline(xintercept = ppm_axis[Bexp],
+             linetype="dotted", color = "gray80", size=0.6)+
+  geom_segment()
+p <- p + facet_grid(rows = "method", scales = "fixed")
+p <- p + 
+  xlab("ppm") +
+  ylab("Mean score") + scale_x_reverse() + ggtitle("VIP methods")
+
+p <- p +theme(
+      strip.text.y = element_text(
+        size = 8, color = "white", face = "bold"
+        ),
+      strip.background = element_rect(
+     color="black", fill="black", size=3, linetype="solid"
+     )
+      )+
+  theme(panel.background = 
+          element_rect(fill = 'gray95', colour = 'white')) +
+  
+ geom_hline(yintercept = 1, linetype = "dotted", colour="red")
+           
+p_vip <- p
+p <- plot_grid(p_stat,p_coef,p_vip, nrow = 3, rel_heights = c(2/10,4/10, 2/10))
+
+title <- ggdraw() + draw_label("Mean features scores", fontface='bold')
+p <- plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1)) 
+
+p
+
+# ggsave(paste0(size_dt,"MeanDescrRank.png"),
+#        plot = p, width = 20, height = 30, units = "cm", path = out_path)
+```
+
+
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"MeanDescrRank.png")))
+```
+
+
+
+## Frequencies of TP and FP for the 1:th ranked features
+
+```{r, fig.height=20}
+# png(file.path(out_path, paste0(size_dt,"FreqTP_FP.png")), width=2000,
+#     pointsize=43, height = 3360)
+
+par(mfrow=c(length(rank_B_all),1), mar = c(2,2,3,2))
+
+# Ranking methods: Frequencies of true positive and false positives for the 1:th ranked features
+nfeat <- length(Bexp)
+
+vect <- rep(-1, m)
+vect[Bexp] <- 1
+
+for (i in 1:length(rank_B_rank)){
+  vv <- rep(0, m)
+  vv[as.numeric(names(table(ranked_B_rank[[i]][1:nfeat,])))] <-  
+    table(ranked_B_rank[[i]][1:nfeat,])
+  vv <- vv * vect / dim(rank_B_rank[[1]])[1]
+  plot(0,type='n', xlim=c(0,500), 
+       ylim = range(vv), 
+       main = paste0("Frequencies of TP and FP features for the 1:", 
+                     nfeat, "th ranked features \n", names(rank_B_rank)[i]))
+  abline(v = Bexp, lty = 2, col="gray70")
+  lines(vv, type="h")
+  
+}
+
+
+# Selection methods: Frequencies of true positive and false positives 
+
+for (i in 1:length(rank_B_sel)){
+  vv <- rep(0, dim(rank_B_sel[[1]])[2])
+  vv[as.numeric(names(table(unlist(ranked_B_sel[[i]]))))] <-  
+    table(unlist(ranked_B_sel[[i]]))
+  vv <- vv * vect/dim(rank_B_sel[[1]])[1]
+  plot(0,type='n', xlim=c(0,500), 
+       ylim = range(vv), 
+       main = paste0("Frequencies of TP and FP features ", 
+                     "\n", names(rank_B_sel)[i]))
+  abline(v = Bexp, lty = 2, col="gray70")
+  lines(vv, type="h")
+  
+}
+
+# dev.off()
+```
+
+
+```{r, fig.height=20}
+nfeat <- length(Bexp)
+
+vect <- rep(-1, m)
+vect[Bexp] <- 1
+
+VV_rank <- c()
+for (i in 1:length(rank_B_rank)){
+  vv <- rep(0, m)
+  vv[as.numeric(names(table(ranked_B_rank[[i]][1:nfeat,])))] <-  
+    table(ranked_B_rank[[i]][1:nfeat,])
+  # vv <- vv * vect / dim(rank_B_rank[[1]])[1]
+   vv <- vv * vect 
+  VV_rank <- rbind(VV_rank, vv)
+}
+VV_rank <- VV_rank/dim(rank_B_rank$`t-stat`)[1]
+rownames(VV_rank) <- names(rank_B_rank)
+
+# Selection methods: Frequencies of true positive and false positives 
+VV_sel <- c()
+for (i in 1:length(rank_B_sel)){
+  vv <- rep(0, dim(rank_B_sel[[1]])[2])
+  vv[as.numeric(names(table(unlist(ranked_B_sel[[i]]))))] <-  
+    table(unlist(ranked_B_sel[[i]]))
+  # vv <- vv * vect/dim(rank_B_sel[[1]])[1]
+  vv <- vv * vect
+  VV_sel <- rbind(VV_sel, vv)
+}
+
+VV_sel <- VV_sel/dim(rank_B_sel$`t-fdr`)[1]
+rownames(VV_sel) <- names(rank_B_sel)
+
+colnames(VV_rank) <- ppm_axis
+df <- melt(t(VV_rank), value.name = "Frequencies")
+names(df)[1] <- "ppm"
+names(df)[2] <- "method"
+
+p <- ggplot(data=df,aes(x=ppm,xend=ppm,y=0,yend=Frequencies))+ 
+  geom_vline(xintercept = ppm_axis[Bexp],linetype="dotted", color = "gray80", size=0.6) +
+  geom_segment()
+p <- p + facet_grid(rows = "method")
+p <- p + ggtitle("Arbitrary threshold m*=46") + scale_x_reverse() + 
+  xlab("ppm") +
+  ylab("Frequency")
+p <- p + theme(
+      strip.text.y = element_text(
+        size = 9, color = "white", face = "bold"
+        ),
+      strip.background = element_rect(
+     color="black", fill="black", size=3, linetype="solid"
+     )
+      ) +
+  theme(panel.background = 
+          element_rect(fill = 'gray95', colour = 'white'))
+
+p_rank <- p
+
+colnames(VV_sel) <- ppm_axis
+df <- melt(t(VV_sel), value.name = "Frequencies")
+names(df)[1] <- "x"
+names(df)[2] <- "method"
+p <- ggplot(data=df,aes(x=x,xend=x,y=0,yend=Frequencies)) + 
+  geom_vline(xintercept = ppm_axis[Bexp],linetype="dotted", color = "gray70", size=0.6) +
+  geom_segment()
+p <- p + facet_grid(rows = "method")
+p <- p + ggtitle("Automatic threshold") + 
+  xlab("ppm") +
+  ylab("Frequency") + scale_x_reverse()
+p <- p +theme(
+      strip.text.y = element_text(
+        size = 9, color = "black", face = "bold"
+        ),
+      strip.background = element_rect(
+     color="white", fill="white", size=3, linetype="solid"
+     )
+      )+
+  theme(panel.background = 
+          element_rect(fill = 'gray95', colour = 'white'))
+p_sel <- p
+
+# abline(v = Bexp, lty = 2, col="gray70")
+
+p <- plot_grid(p_rank, p_sel, nrow = 2, rel_heights = c(5/10,5/10))
+
+title <- ggdraw() + draw_label("Frequencies of TP and FP features",
+                               fontface='bold')
+p <- plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1)) 
+
+p 
+# ggsave(paste0(size_dt,"FreqTP_FP.png"), width = 20, height = 30, units = "cm", path = out_path)
+```
+
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"FreqTP_FP.png")))
+```
+
+
+## Number of identifications per true biomarker
+
+```{r, fig.height=20}
+nfeat <- length(Bexp)
+
+NumID_rank <- sapply(ranked_B_rank, function(a)
+  table(a[1:nfeat,])[names(table(a[1:nfeat,])) %in% Bexp], 
+  simplify = FALSE)
+
+NumID_sel <- sapply(ranked_B_sel, function(x) table(unlist(x))[names(table(unlist(x)))%in% Bexp], simplify = FALSE)
+
+NumID <- c(NumID_rank, NumID_sel)
+
+# png(file.path(out_path, paste0(size_dt,"NumID_perBiom.png")), width=2000,
+#     pointsize=43, height = 3360)
+par(mfrow=c(length(NumID),1), mar = c(2,2,3,2))
+for (i in 1:length(NumID)){
+  
+  vv <- rep(0, length(Bexp))
+  names(vv) <- Bexp
+  vv[names(NumID[[i]])] <- NumID[[i]]
+  plot(NULL,ylim=c(0, dim(ranked_B_rank[[1]])[2]),
+       xlim=c(0, length(Bexp)),
+       main = paste0("Number of identifications per true biomarker ", 
+                     "\n", names(NumID)[i]), xaxt="n")
+  
+  axis(side=1, at=1:length(Bexp), label=names(vv), cex.axis =0.8)
+  sep <- cumsum(sapply(Bexplist,length))+0.5
+  sep <- sep[-length(sep)]
+  abline(v = sep, lty = 2, col = "gray70")
+  
+  rect(sep[1], 0, sep[2],  dim(ranked_B_rank[[1]])[2], 
+       col = "honeydew", border=NA)
+  rect(sep[3], 0, sep[4],  dim(ranked_B_rank[[1]])[2], 
+       col = "honeydew", border=NA)
+  rect(sep[5], 0, (length(Bexp)+1),  dim(ranked_B_rank[[1]])[2], 
+       col = "honeydew", border=NA)
+  
+  rect(0, 0, sep[1],  dim(ranked_B_rank[[1]])[2], 
+       col = "lightblue1", border=NA)
+  rect(sep[2], 0, sep[3],  dim(ranked_B_rank[[1]])[2], 
+       col = "lightblue1", border=NA)
+  rect(sep[4], 0, sep[5],  dim(ranked_B_rank[[1]])[2], 
+       col = "lightblue1", border=NA)
+  
+  points(vv, xaxt = "n", type = "h")
+  
+  
+  
+}
+
+# dev.off()
+```
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"NumID_perBiom.png")))
+```
+
+
+## Mean number of identification of indep biomarker per method
+### All distriminant
+
+```{r}
+# mean number of identification of indep biomarker per method
+##############################################################
+
+# Ranking methods ======================
+nsimul <- dim(ranked_B_rank$`t-stat`)[2]
+nbiom_rank <- length(Bexp)
+
+ranked_B_rank_nBiomSel <- sapply(ranked_B_rank, function(x) x[1:nbiom_rank,], simplify=FALSE)
+
+a <- matrix(data=NA, nrow=nsimul, ncol=length(Bexplist))
+A <- vector(mode="list")
+for (j in 1:nRankMeth) { # methods
+  for (i in 1:length(Bexplist)) { # indep biomarkers
+    for (k in 1:nsimul) { 
+      a[k,i] <- sum(ranked_B_rank_nBiomSel[[j]][,k]%in%Bexplist[[i]])
+      
+    }
+  }
+  A[[j]] <- a
+}
+
+f <- matrix(data=NA, ncol=nRankMeth, nrow=length(Bexplist), 
+            dimnames=list(NULL, names(ranked_B_rank_nBiomSel)))
+
+for (j in 1:nRankMeth) { # methods
+  for (i in 1:length(Bexplist)){
+    f[i,j] <- sum(A[[j]][,i])*100/(nsimul*numBexp[i]) 
+  }
+}
+
+f_rank <- f
+# png(file.path(out_path, paste0(size_dt,"MeanPCindepBiom_Rank.png")), 
+#     width = 1400, 
+#     pointsize = 30,height=900)
+
+col <- col_vect3[1:nRankMeth]
+par(xpd=T, mar=c(5, 4, 4, 5), mfrow=c(1,1))
+barplot(t(f), beside=TRUE, col=col, ylim=c(0, 1), cex.main=1.3, cex.axis = 1.3,
+        main=paste("Mean % of identification of independent biomarkers,", "size:", "\n ranking methods"),names.arg=paste("Biom",c(1:length(Bexplist))))
+legend((length(Bexplist)*(nRankMeth+1)),1,legend=colnames(f), col=col, pch=15, cex=1,  x.intersp = 0.5, y.intersp = 0.7)
+
+# dev.off()
+
+
+# selection methods ======================
+
+nsimul <- length(ranked_B_sel$`SPLS-coef`)
+
+a <- matrix(data=NA, nrow=nsimul, ncol=length(Bexplist))
+A <- vector(mode="list")
+for (j in 1:nSelMeth) { # methods
+  for (i in 1:length(Bexplist)) { # indep biomarkers
+    for (k in 1:nsimul) { 
+      a[k,i] <- sum(ranked_B_sel[[j]][[k]]%in%Bexplist[[i]])
+      
+    }
+  }
+  A[[j]] <- a
+}
+
+f <- matrix(data=NA, ncol=nSelMeth, nrow=length(Bexplist), 
+            dimnames=list(NULL, names(ranked_B_sel)))
+
+for (j in 1:nSelMeth) { # methods
+  for (i in 1:length(Bexplist)){
+    f[i,j] <- sum(A[[j]][,i])*100/(nsimul*numBexp[i]) 
+  }
+}
+
+f_sel <- f
+
+# png(file.path(out_path, paste0(size_dt,"MeanPCindepBiom_Sel.png")), 
+#     width = 1400, 
+#     pointsize = 30,height=900)
+
+col <- col_vect3[1:nSelMeth]
+par(xpd=T, mar=c(5, 5, 4, 7), mfrow=c(1,1))
+barplot(t(f), beside=TRUE, col=col, ylim=c(0, 1),  
+        cex.main=1.3, cex.axis = 1.3, 
+        main=paste("Mean % of identification of independent biomarkers", "\n selection methods"),names.arg=paste("Biom",c(1:length(Bexplist))))
+legend((length(Bexplist)*(nSelMeth+1)),1,
+       legend = colnames(f), col=col, pch=15, 
+       cex=1,  x.intersp = 0.5, y.intersp = 0.7)
+
+# dev.off()
+```
+
+
+```{r}
+df <- melt(t(f_rank))
+names(df)[1] <- "Method"
+names(df)[2] <- "x"
+df$x <- as.character(df$x)
+
+col <- col_vect3[1:nRankMeth]
+# Changer les couleurs manuellement
+p <- ggplot(data=df, aes(x=x, y=value, fill=Method)) +
+geom_bar(stat="identity", color="black", position=position_dodge())+
+  theme_minimal()+
+  ggtitle("Arbitrary threshold m*=46") + ylab("%") + xlab("Independent biomarkers")
+# Couleurs personnalisées
+p <- p + scale_fill_manual(values=col)
+# # palettes de couleurs de type brewer
+# p + scale_fill_brewer(palette="Blues")
+p_rank <- p
+
+df <- melt(t(f_sel))
+names(df)[1] <- "Method"
+names(df)[2] <- "x"
+df$x <- as.character(df$x)
+
+col <- col_vect3[1:nSelMeth]
+# Changer les couleurs manuellement
+p <- ggplot(data=df, aes(x=x, y=value, fill=Method)) +
+geom_bar(stat="identity", color="black", position=position_dodge())+
+  theme_minimal()+
+  ggtitle("Automatic threshold") + ylab("%") + xlab("Independent biomarkers")
+# Couleurs personnalisées
+p <- p + scale_fill_manual(values=col)
+p_sel <- p
+
+
+p <- plot_grid(p_rank, p_sel, nrow = 1, rel_widths  = c(5/10,5/10))
+
+title <- ggdraw() + draw_label("Mean % of identification of independent biomarkers \n A: Average of features found",
+                               fontface='bold')
+p <- plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1)) 
+
+
+
+# ggsave(paste0(size_dt,"MeanPCindepBiom.png"), width = 30, height = 10, 
+#        units = "cm", path = out_path)
+
+```
+
+
+### Minimum approach
+
+```{r}
+# mean number of identification of indep biomarker per method
+##############################################################
+
+# Ranking methods ======================
+nsimul <- dim(ranked_B_rank$`t-stat`)[2]
+nbiom_rank <- length(Bexp)
+
+ranked_B_rank_nBiomSel <- sapply(ranked_B_rank, function(x) x[1:nbiom_rank,], simplify=FALSE)
+
+a <- matrix(data=NA, nrow=nsimul, ncol=length(Bexplist))
+A <- vector(mode="list")
+for (j in 1:nRankMeth) { # methods
+  for (i in 1:length(Bexplist)) { # indep biomarkers
+    for (k in 1:nsimul) { 
+      a[k,i] <- sum(ranked_B_rank_nBiomSel[[j]][,k]%in%Bexplist[[i]])>0
+    }
+  }
+  A[[j]] <- a
+}
+
+f <- matrix(data=NA, ncol=nRankMeth, nrow=length(Bexplist), 
+            dimnames=list(NULL, names(ranked_B_rank_nBiomSel)))
+
+for (j in 1:nRankMeth) { # methods
+  for (i in 1:length(Bexplist)){
+    f[i,j] <- sum(A[[j]][,i])*100/(nsimul) 
+  }
+}
+
+f_rank <- f
+
+
+col <- col_vect3[1:nRankMeth]
+par(xpd=T, mar=c(5, 4, 4, 5), mfrow=c(1,1))
+barplot(t(f), beside=TRUE, col=col, ylim=c(0, 1), cex.main=1.3, cex.axis = 1.3,
+        main=paste("Mean % of identification of independent biomarkers,", "size:", "\n ranking methods"),names.arg=paste("Biom",c(1:length(Bexplist))))
+legend((length(Bexplist)*(nRankMeth+1)),1,legend=colnames(f), col=col, pch=15, cex=1,  x.intersp = 0.5, y.intersp = 0.7)
+
+
+
+# selection methods ======================
+
+nsimul <- length(ranked_B_sel$`SPLS-coef`)
+
+a <- matrix(data=NA, nrow=nsimul, ncol=length(Bexplist))
+A <- vector(mode="list")
+for (j in 1:nSelMeth) { # methods
+  for (i in 1:length(Bexplist)) { # indep biomarkers
+    for (k in 1:nsimul) { 
+      a[k,i] <- sum(ranked_B_sel[[j]][[k]]%in%Bexplist[[i]])>0
+      
+    }
+  }
+  A[[j]] <- a
+}
+
+f <- matrix(data=NA, ncol=nSelMeth, nrow=length(Bexplist), 
+            dimnames=list(NULL, names(ranked_B_sel)))
+
+for (j in 1:nSelMeth) { # methods
+  for (i in 1:length(Bexplist)){
+    f[i,j] <- sum(A[[j]][,i])*100/(nsimul) 
+  }
+}
+
+f_sel <- f
+
+col <- col_vect3[1:nSelMeth]
+par(xpd=T, mar=c(5, 5, 4, 7), mfrow=c(1,1))
+barplot(t(f), beside=TRUE, col=col, ylim=c(0, 1),  
+        cex.main=1.3, cex.axis = 1.3, 
+        main=paste("Mean % of identification of independent biomarkers", "selection methods"),names.arg=paste("Biom",c(1:length(Bexplist))))
+legend((length(Bexplist)*(nSelMeth+1)),1,
+       legend = colnames(f), col=col, pch=15, 
+       cex=1,  x.intersp = 0.5, y.intersp = 0.7)
+```
+
+
+```{r}
+df <- melt(t(f_rank))
+names(df)[1] <- "Method"
+names(df)[2] <- "x"
+df$x <- as.character(df$x)
+
+col <- col_vect3[1:nRankMeth]
+# Changer les couleurs manuellement
+p <- ggplot(data=df, aes(x=x, y=value, fill=Method)) +
+geom_bar(stat="identity", color="black", position=position_dodge())+
+  theme_minimal()+
+  ggtitle("Arbitrary threshold m*=46") + ylab("%") + xlab("Independent biomarkers")
+# Couleurs personnalisées
+p <- p + scale_fill_manual(values=col)
+# # palettes de couleurs de type brewer
+# p + scale_fill_brewer(palette="Blues")
+p_rank <- p
+
+df <- melt(t(f_sel))
+names(df)[1] <- "Method"
+names(df)[2] <- "x"
+df$x <- as.character(df$x)
+
+col <- col_vect3[1:nSelMeth]
+# Changer les couleurs manuellement
+p <- ggplot(data=df, aes(x=x, y=value, fill=Method)) +
+geom_bar(stat="identity", color="black", position=position_dodge())+
+  theme_minimal()+
+  ggtitle("Automatic threshold") + ylab("%") + xlab("Independent biomarkers")
+# Couleurs personnalisées
+p <- p + scale_fill_manual(values=col)
+p_sel <- p
+
+
+p <- plot_grid(p_rank, p_sel, nrow = 1, rel_widths  = c(5/10,5/10))
+
+title <- ggdraw() + draw_label("Mean % of identification of independent biomarkers \n B: At least 1 feature found",
+                               fontface='bold')
+p <- plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1)) 
+
+
+
+# ggsave(paste0(size_dt,"MeanPCindepBiom2.png"), width = 30, height = 10, 
+#        units = "cm", path = out_path)
+
+```
+
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"MeanPCindepBiom_Rank.png")))
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"MeanPCindepBiom_Sel.png")))
+# 
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"MeanPCindepBiom.png")))
+
+```
+
+
+# C. Prediction accuracy
+
+
+```{r}
+# ROC indices at best threshold for ROC methods
+##################################################
+res_pred_accuracy_FUN <- sapply(res_outerloop_Pred,
+                                pred_accuracy_FUN, 
+                                simplify = FALSE)
+
+```
+
+```{r}
+# metrics at best threshold
+mean_sensit <- sapply(res_pred_accuracy_FUN,  
+                      function(a) a[["msensit"]], simplify=TRUE)
+mean_fdr <- sapply(res_pred_accuracy_FUN, 
+                   function(a) 1-a[["mspecif"]], simplify=TRUE)
+
+mean_AvConfClas <- sapply(res_pred_accuracy_FUN, 
+          function(a) a[["mAvConfClas"]], simplify=TRUE)
+
+mean_AvPredAb <- sapply(res_pred_accuracy_FUN, 
+          function(a) a[["mAvPredAb"]], simplify=TRUE)
+
+mean_F1 <- sapply(res_pred_accuracy_FUN, 
+                  function(a) a[["mF1"]], simplify=TRUE)
+
+
+id_opt <- c()
+AUC <- c()
+sensit_opt <- c()
+fdr_opt <- c()
+AvConfClas_opt <- c()
+AvPredAb_opt <- c()
+F1_opt <- c()
+for (i in 1:length(res_pred_accuracy_FUN)){
+  fdr <- mean_fdr[,i]
+  sens <- mean_sensit[,i]
+
+  id_opt[i] <- ROC_dist_fun(x=fdr,y=sens) 
+  
+  AUC[i] <- abs(round(AUC_fun(TPR = sens, FPR = fdr),3))
+  
+  fdr_opt[i] <- round(mean_fdr[id_opt[i],i],3)
+  sensit_opt[i] <- round(mean_sensit[id_opt[i],i],3)
+  AvConfClas_opt[i] <- round(mean_AvConfClas[id_opt[i],i],3)
+  AvPredAb_opt[i] <- round(mean_AvPredAb[id_opt[i],i],3)
+  F1_opt[i] <- round(mean_F1[id_opt[i],i],3)
+}
+names(id_opt) <- names(AUC) <- names(sensit_opt) <- names(fdr_opt) <- 
+  names(AvConfClas_opt) <- names(AvPredAb_opt)  <- 
+   names(F1_opt) <- names(res_pred_accuracy_FUN)
+
+res <- cbind(AUC, sensitivity = sensit_opt, 
+             FDR = fdr_opt, AvConfClas_opt,AvPredAb_opt, F1=F1_opt)
+pander(res)
+
+# write.csv(round(res,2), file = file.path(out_path, paste0(size_dt,"classif_perform.csv")))
+```
+
+
+```{r, eval=TRUE}
+# ROC curve
+# png(file.path(out_path, paste0(size_dt,"ROCcurve_pred_accur.png")), width=900,
+#     pointsize=23, height = 700)
+
+par(mfrow=c(1,1), mar=c(4,4,2,2))
+
+col <- col_vect
+dx=dy=seq(0,1,0.01)
+plot((1-res_pred_accuracy_FUN[[1]]$mspecif), res_pred_accuracy_FUN[[1]]$msensit, 
+     xlim=c(0,1), ylim=c(0,1), pch=1, type="b", col=col[1], 
+     xlab="FDR", main=paste("ROC curves"), ylab="Sensitivity")
+
+for (i in 2:length(res_pred_accuracy_FUN)){
+  lines((1-res_pred_accuracy_FUN[[i]]$mspecif), res_pred_accuracy_FUN[[i]]$msensit, xlim=c(0,1), ylim=c(0,1), pch=(i), type="b", col=col[i])
+}
+lines(dx,dy, lty=3)
+
+legend("bottomright", legend = names(res_pred_accuracy_FUN), 
+       col = col[1:length(res_pred_accuracy_FUN)],pch = 1:length(res_pred_accuracy_FUN))
+
+text(1-0.3, 0.5, labels =paste0("AUC:\n", paste0(AUC, " (",names(res_pred_accuracy_FUN),") \n",collapse=""), collapse=""), pos = 4)
+
+# dev.off()
+```
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path,
+#             paste0(size_dt,"ROCcurve_pred_accur.png")))
+```
+
+
+# D. Features stability
+
+## Stability 
+
+```{r}
+# use ExtrFeat FUN to format the result ###############
+
+# Ranking methods
+res_ExtrFeat_rank <- mapply(ExtrFeat, rank_B = rank_B_rank, 
+                            ranked_B = ranked_B_rank, 
+                            MoreArgs = list(type = "nbiom",nbiom = 30))
+
+# Selection methods
+res_ExtrFeat_sel <- mapply(ExtrFeat, 
+                           rank_B =list("SPLS-coef" = rank_B_sel$`SPLS-coef`,
+                                     "LsOPLS-coef" = rank_B_sel$`LsOPLS-coef`), 
+                           ranked_B = ranked_B_sel_allEta, 
+                           MoreArgs = list(type = "thresh", thresh = 0))
+
+```
+
+## Stability for t-fdr and vip1
+
+```{r}
+
+res <- matrix(0, ncol = m, nrow = nsimul)
+for (i in 1:nsimul){
+  res[i,ranked_B_sel$`t-fdr`[[i]]] <- 1
+}
+
+stab_tfdr <- 100*getStability(res,alpha=0.05)$stability
+
+
+res <- matrix(0, ncol = m, nrow = nsimul)
+for (i in 1:nsimul){
+  res[i,ranked_B_sel$`PLS-vip1`[[i]]] <- 1
+}
+
+stab_plsvip1 <- 100*getStability(res,alpha=0.05)$stability
+
+res <- matrix(0, ncol = m, nrow = nsimul)
+for (i in 1:nsimul){
+  res[i,ranked_B_sel$`OPLS-vip1`[[i]]] <- 1
+}
+
+stab_oplsvip1 <- 100*getStability(res,alpha=0.05)$stability
+
+pander(data.frame(stab_tfdr,stab_plsvip1,stab_oplsvip1))
+
+```
+
+## Stability vs nbiom or vs eta
+
+```{r}
+
+# Ranking methods
+# ASMstab_res <- getStability_res  <- matrix(NA, ncol = ncol(res_ExtrFeat_rank), nrow = (m-1), dimnames = list(NULL, colnames(res_ExtrFeat_rank)))
+
+ExtrFeat_rank_fun <- function(i){
+  res_ExtrFeat_rank <- mapply(ExtrFeat, rank_B = rank_B_rank, 
+           ranked_B = ranked_B_rank, 
+            MoreArgs = list(type = "nbiom",nbiom = i))
+  getStability_res <- sapply(res_ExtrFeat_rank["binMat_feat",], 
+                          function(x) getStability(x,alpha=0.05)$stability) 
+  getStability_res
+}
+
+res <- mclapply(1:(m-1), ExtrFeat_rank_fun, mc.cores = 3)
+getStability_res <- t(simplify2array(res))
+
+# Only getStability_res ==========
+# png(file.path(out_path, paste0(size_dt,"Stability_rank.png")), width=1500,
+#     pointsize=35, height = 1000)
+
+plot(getStability_res[,1], type="l", ylim =c(0,1), 
+     ylab = "Stability (%)", cex.main =1.3, cex.axis = 1.2,
+     xlab = "m*", pch=1, 
+     main = "Stability vs number of selected features", 
+     col=col_vect3[1], lwd=3)
+
+for (i in 2:length(rank_B_rank)){
+  points(getStability_res[,i], col=col_vect3[i], pch=i,
+         type="l", lwd=3)
+}
+legend("bottomright", legend = c(names(rank_B_rank)), 
+       col=c(col_vect3[1:length(rank_B_rank)]), lty=1, lwd=2)
+
+# dev.off()
+
+
+# With ggplot =============================
+
+melted <- melt(getStability_res)  # convert to long format
+colnames(melted)[1] <- "x"
+colnames(melted)[2] <- "Method"
+
+p <- ggplot(data=melted,
+       aes(x=x, y=value, colour=Method)) +
+       geom_line()+ ylim(0,1)
+p <- p + ggtitle("Arbitrary threshold methods") + 
+  xlab("m*")+
+  ylab("Stability")
+# p
+
+p_rank <- p
+
+ 
+
+#########
+# Selection methods
+# use ExtrFeat FUN to format the result ###############
+# For all simulations per eta
+eta_all <- mclapply(ranked_B_sel_allEta, 
+                  function(x) as.numeric(gsub("eta","",names(x))), mc.cores = 3)
+ranked_B <- sapply(ranked_B_sel_allEta, function(x) x[[1]], simplify = FALSE)
+
+
+ExtrFeat_sel_fun <- function(j){
+
+  rank_B_byeta <- vector(mode = "list", length = length(eta_all[[j]]))
+  
+  rank_B_byeta <- sapply(1:length(eta_all[[j]]), 
+                         function(i) t(sapply(rank_B_sel_allEta[[j]], function(x)
+                           x[i,])), simplify = FALSE)
+  
+  names(rank_B_byeta) <- eta_all[[j]]
+  
+  ExtrFeat_allEta <- mapply(ExtrFeat, rank_B=rank_B_byeta,
+                                 ranked_B=ranked_B_sel_allEta[[j]], 
+                                 MoreArgs = list(type = "thresh",  
+                                  thresh = 0), SIMPLIFY = FALSE)
+  
+
+    getStability_res <- sapply(1:length(ExtrFeat_allEta), 
+        function(l) getStability(ExtrFeat_allEta[[l]]$binMat_feat,
+                                 alpha=0.05)$stability)
+    
+    getStability_res
+
+  }
+
+getStability_res <- mclapply(1:length(ranked_B),  ExtrFeat_sel_fun)
+names(getStability_res) <- names(rank_B_sel)[-c(1,2,3)]
+
+
+# Only getStability_res ==========
+  
+# png(file.path(out_path, paste0(size_dt,"Stability_sel.png")), width=1500,
+#     pointsize=35, height = 1000)
+
+plot(eta_all[[1]], getStability_res[[1]], type="l", 
+     ylim =c(0,1), ylab = "Stability (%)", 
+     xlab = "Eta", pch=1, cex.main =1.3, cex.axis = 1.2,
+     main = "Stability vs eta", col=col_vect3[1], lwd=3)
+
+for (i in 2:(length(eta_all))){
+  points(eta_all[[i]], getStability_res[[i]], col=col_vect3[i], 
+         pch=i, type="l", lwd=3)
+}
+
+legend("bottomright", legend = c(names(rank_B_sel)[-1]), 
+       col=c(col_vect3[1:(length(rank_B_sel)-1)]), lty=1, lwd=2)
+# dev.off()
+
+# With ggplot =============================
+stab_res <- do.call(cbind,getStability_res)
+rownames(stab_res) <- eta_all[[1]]
+melted <- melt(stab_res)  # convert to long format
+colnames(melted)[1] <- "x"
+colnames(melted)[2] <- "Method"
+
+p <- ggplot(data=melted,
+       aes(x=x, y=value, colour=Method)) +
+       geom_line() + ylim(0,1)
+p <- p + ggtitle("Sparse methods") + 
+  xlab("Eta") +
+  ylab("Stability")
+# p
+
+p_sel <- p
+
+```
+
+
+```{r}
+# save ggplot
+p <- plot_grid(p_rank, p_sel, nrow = 2, rel_heights = c(1/2,1/2))
+
+title <- ggdraw() + draw_label("Stability with varying selection parameter", fontface='bold')
+p <- plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1)) 
+
+p
+
+# ggsave(paste0(size_dt,"Stability.png"), width = 20, height = 25, 
+#        units = "cm", path = out_path)
+```
+
+
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"Stability_rank.png")))
+# knitr::include_graphics(file.path(out_path, paste0(size_dt,"Stability_sel.png")))
+```
+
+
+# E. Discriminant power
+
+```{r}
+
+Xtrain <- sapply(all_subsamples$trainOut, function(x) x$x, 
+                 simplify = FALSE)
+Xtrain_centred <- sapply(Xtrain, scale, 
+                         center = TRUE, scale = FALSE, simplify = FALSE)
+ytrain <- sapply(all_subsamples$trainOut, function(x) x$y, simplify = FALSE)
+
+rank_B_all_coef <- list("PLS-coef"=rank_B_all$`PLS-coef`,"OPLS-coef"= rank_B_all$`OPLS-coef`,"SPLS-coef"=rank_B_all$`SPLS-coef`,"LsOPLS-coef"= rank_B_all$`LsOPLS-coef`)
+
+BiomScores <- scores1 <- scores0 <- t_val <- p_val <- 
+  vector(mode = "list", length = (length(rank_B_all_coef)))
+
+names(t_val) <- names(rank_B_all_coef)
+
+for (j in 1:length(rank_B_all_coef)){
+  
+  BS <- c()
+  for (i in 1:length(Xtrain_centred)){
+    bs <- Xtrain_centred[[i]] %*% rank_B_all_coef[[j]][i,]
+    BS  <- cbind(BS, bs)
+  }
+  BiomScores[[j]] <- BS
+  
+}
+
+for (j in 1:length(BiomScores)){
+  sc1 <- sc0 <- c()
+  for (i in 1:length(Xtrain_centred)){
+    s1 <- BiomScores[[j]][,i][ytrain[[i]]==1]
+    s0 <- BiomScores[[j]][,i][ytrain[[i]]==0]
+    sc1 <- cbind(sc1, s1)
+    sc0 <- cbind(sc0, s0)
+  }
+  scores1[[j]] <- sc1
+  scores0[[j]] <- sc0
+  
+  scores0[[j]] <- split(scores0[[j]], rep(1:ncol(scores0[[j]]), 
+                                          each = nrow(scores0[[j]])))
+  scores1[[j]] <- split(scores1[[j]], rep(1:ncol(scores1[[j]]), 
+                                          each = nrow(scores1[[j]])))
+  t_val[[j]] <- abs(mapply(function(x,y) t.test(x=x,y=y)$statistic, 
+                           x = scores1[[j]], y = scores0[[j]]))
+  p_val[[j]] <- mapply(function(x,y) t.test(x=x,y=y)$p.value, 
+                       x = scores1[[j]], y = scores0[[j]])
+  
+}
+
+# png(file.path(out_path, paste0(size_dt,"Discriminant_power.png")), 
+#     width=1500,
+#     pointsize=50, height = 1500)
+boxplot(t_val, ylim=range(t_val), main = "2 sample t-test statistic on c",las=2, xaxt="n")
+end_point = 0.5 + length(t_val)
+text(seq(1,end_point,by=1), par("usr")[3]-0.25, 
+     srt = 60, adj= 1, xpd = TRUE,
+     labels = names(t_val))
+# dev.off()
+```
+
+
+```{r}
+t_val <- do.call(rbind,t_val)
+df <- melt(t(t_val))
+names(df)[2] <- "Method"
+p <- ggplot(df, aes(x=Method, y=value, color=Method)) +
+  geom_boxplot()
+
+p <- p + scale_color_manual(values=col_vect3)+
+  ggtitle("2 sample t-test statistic on discriminant power") + ylab("Statistic")
+
+# ggsave(paste0(size_dt,"Discriminant_power.png"), 
+#        plot = p, width = 20, height = 10, units = "cm", path = out_path)
+```
+
+
+
+```{r , echo=FALSE,  out.width = '100%'}
+# knitr::include_graphics(file.path(out_path,
+#                                   paste0(size_dt,"Discriminant_power.png")))
+```
+
+# F. Meta-parameters stability
+
+
+```{r}
+#### Extract the meta-parameters
+MP_PLS <- res_outerloop_PLS$HP
+
+MP_OPLS <- res_outerloop_OPLS$nOcopt
+
+MP_SPLS <- res_outerloop_SPLS_allEta$HP_opt
+
+ID <- sapply(res_outerloop_LsOPLS_allEta$byeta_opt, function(x) which.max(x[,"mean_AUC"]))
+
+MP_LSOPLS <- mapply(function(x, id) x[id,2:3], x=res_outerloop_LsOPLS_allEta$byeta_opt, id=ID, SIMPLIFY = FALSE)
+
+#### Tables with number of predictive or orthogonal components and eta
+Num_comp <- cbind(PLS = unlist(MP_PLS), OPLS = (unlist(MP_OPLS)+1), SPLS = sapply(MP_SPLS, function(x) x[,"K"]), LSOPLS = (sapply(MP_LSOPLS, function(x) x["nOc"])+1))
+
+eta_opt <- cbind(SPLS =sapply(MP_SPLS, function(x) x[,"eta"]), LSOPLS = sapply(MP_LSOPLS, function(x) x["eta"]))
+
+```
+
+
+```{r}
+# ggplot
+### Num_comp
+df <- melt(t(Num_comp))
+names(df)[1] <- "Method"
+p <- ggplot(df, aes(x=Method, y=value, color=Method)) +
+  # geom_violin(trim=FALSE)
+  geom_boxplot()
+
+p <- p + scale_color_manual(values=col_vect3,labels = c("PLS (nLV)", "OPLS (nOC+nLV)", "SPLS (nLV)","LSOPLS (nOC+nLV)"))+
+  ggtitle("Number of selected predictive or orthogonal variables") + ylab("# selected components")
+Num_comp_p <- p
+
+### eta_opt
+df <- melt(t(eta_opt))
+names(df)[1] <- "Method"
+p <- ggplot(df, aes(x=Method, y=value, color=Method)) +
+  # geom_violin(trim=FALSE)
+  geom_boxplot()
+
+p <- p + scale_color_manual(values=col_vect3[1:2]) +
+  ggtitle("Eta") + ylab("Eta")
+eta_opt_p <- p
+
+pander("Median value of eta")
+apply(eta_opt,2,median)
+
+```
+
+```{r}
+# save ggplot
+p <- plot_grid(Num_comp_p, eta_opt_p, nrow = 1, rel_widths  = c(4/6,2.5/6))
+
+title <- ggdraw() + draw_label("Meta-parameters chosen by CV", fontface='bold')
+p <- plot_grid(title, p, ncol=1, rel_heights=c(0.1, 1)) 
+p
+
+# ggsave(paste0(size_dt,"MetaParam.png"), width = 25, height = 12, 
+#        units = "cm", path = out_path)
+```
+
