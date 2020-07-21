@@ -262,10 +262,20 @@ for (j in  names(datasets)) {
   i=i+1
 }
 
-pp = plot_grid(plots[[1]], plots[[2]], plots[[3]], plots[[4]], labels=c("A", "B", "C", "D"), ncol = 2, nrow = 2)
+
+pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), 
+               ncol = 1, nrow = 2)
 
 pp
-# ggsave(file.path("Figures", "PCA_ALL.pdf"), plot=pp, height = 10, width = 11)
+# ggsave(file.path("Figures", "PCA_ALL1.pdf"), plot=pp, 
+#        height = 10, width = 6, scale = 0.8)
+
+pp = plot_grid(plots[[3]], plots[[4]], labels=c( "C", "D"), 
+               ncol = 1, nrow = 2)
+
+pp
+# ggsave(file.path("Figures", "PCA_ALL2.pdf"), plot=pp, 
+#        height = 10, width = 6, scale = 0.8)
 
 # quartz()
 # pp
@@ -349,7 +359,7 @@ for (j in  names(datasets_HS)) {
   i=i+1
 }
 
-pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), ncol = 2, nrow = 1)
+pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), ncol = 1, nrow = 2)
 # ggsave("PCA_HS_COLJ.pdf", plot=pp, height = 4.5, width = 11)
 pp
 
@@ -373,10 +383,12 @@ for (j in  names(datasets_HU)) {
   i=i+1
 }
 
-pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), ncol = 2, nrow = 1)
+pp = plot_grid(plots[[1]], plots[[2]], labels=c("A", "B"), ncol = 1, nrow = 2)
 # ggsave("PCA_HU.pdf", plot=pp, height = 4.5, width = 11)
 pp
 ```
+
+
 
 ## Inertia
 
@@ -498,5 +510,12 @@ pander(round(FINAL_tab_Ward, 2))
 
 write.csv(round(FINAL_tab_Ward,2), file = "FINAL_tab.csv")
 
+```
+
+
+# Session info
+
+```{r}
+sessionInfo()
 ```
 
