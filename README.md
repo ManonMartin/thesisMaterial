@@ -1,5 +1,5 @@
 # Thesis Material
-Presentation, R codes and datasets from my PhD thesis
+Presentation, R codes and datasets from my PhD thesis:
 
 Martin, M. (2020). Uncovering informative content in metabolomics data: from pre-processing of 1H NMR spectra to biomarkers discovery in multifactorial designs (Doctoral dissertation, UCLouvain).
 http://hdl.handle.net/2078.1/227671
