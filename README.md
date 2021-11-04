@@ -6,7 +6,8 @@ http://hdl.handle.net/2078.1/227671
 
 ## Presentation
 
-[Slides](https://github.com/ManonMartin/thesisMaterial/blob/master/Presentation/MMartin_prix_these_rfmf21_slides.pdf) presented at the conference 14JS RFMF 2021 (23-26 nov. 2021 Aussois (France))
+[Slides](https://github.com/ManonMartin/thesisMaterial/blob/master/Presentation/MMartin_prix_these_rfmf21_slides.pdf) presented at the conference [14JS RFMF 2021](https://14jsrfmf2021.sciencesconf.org/) (23-26 nov. 2021 Aussois (France))
+
 
  
 ## R codes (htmlpreview):
