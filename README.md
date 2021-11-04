@@ -1,11 +1,10 @@
 # Thesis Material
 R codes and datasets from my PhD thesis
 
-### Presentation
+## Presentation
 
 [Slides](https://github.com/ManonMartin/thesisMaterial/blob/master/Presentation/MMartin_prix_these_rfmf21_slides.pdf) presented at the conference 14JS RFMF 2021 (23-26 nov. 2021 Aussois (France))
 
- ###
  
 ## R codes (htmlpreview):
 
