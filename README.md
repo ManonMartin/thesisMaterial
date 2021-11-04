@@ -1,6 +1,11 @@
 # Thesis Material
 R codes and datasets from my PhD thesis
 
+### Presentation
+
+Slides presented at the conference 14JS RFMF 2021 (23-26 nov. 2021 Aussois (France))
+[GraphsNMRPretreat]()
+
 ## R codes (htmlpreview):
 
  ### Pre-processing with PepsNMR
